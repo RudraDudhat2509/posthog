@@ -1,5 +1,5 @@
 import { hasScope } from '@/lib/api'
-import { getToolDefinitions } from '@/tools/toolDefinitions'
+import { getToolDefinitions, type ToolDefinitions } from '@/tools/toolDefinitions'
 
 import type { PlaybookId } from './playbookIds'
 
@@ -98,9 +98,15 @@ export interface PlaybookToolRef {
  * Resolve a playbook's representative tools against the live catalog + the caller's
  * scopes. Tools not present in the running surface are dropped (the catalog is the
  * ground truth — this is exactly what stops agents guessing a tool doesn't exist).
+ *
+ * `defs` defaults to the live catalog; it's a parameter so the drop-absent
+ * behaviour can be exercised against a partial catalog in tests.
  */
-export function buildToolSurface(playbookId: PlaybookId, scopes: string[]): PlaybookToolRef[] {
-    const defs = getToolDefinitions()
+export function buildToolSurface(
+    playbookId: PlaybookId,
+    scopes: string[],
+    defs: ToolDefinitions = getToolDefinitions()
+): PlaybookToolRef[] {
     const refs: PlaybookToolRef[] = []
     for (const name of PLAYBOOK_TOOLS[playbookId]) {
         const def = defs[name]

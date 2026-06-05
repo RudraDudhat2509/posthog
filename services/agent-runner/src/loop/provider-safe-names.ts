@@ -48,7 +48,20 @@ export function providerSafeName(id: string): string {
 export function buildToolNameMap(originalIds: string[]): Map<string, string> {
     const safeToOriginal = new Map<string, string>()
     for (const id of originalIds) {
-        safeToOriginal.set(providerSafeName(id), id)
+        const safe = providerSafeName(id)
+        const existing = safeToOriginal.get(safe)
+        if (existing !== undefined && existing !== id) {
+            // Two distinct ids collapsed to the same provider-safe name (e.g. a
+            // `.`-vs-`_` clash, or two long ids sharing a 128-char prefix after
+            // truncation). The second wins and the first becomes undispatchable.
+            // Native ids use a controlled vocab, so this is a custom-tool
+            // misconfiguration — warn loudly rather than silently strand a tool.
+            // eslint-disable-next-line no-console -- build-time misconfig signal, not a hot path
+            console.warn(
+                `[provider-safe-names] tool-name collision: "${existing}" and "${id}" both map to "${safe}"; "${id}" wins and the other is undispatchable`
+            )
+        }
+        safeToOriginal.set(safe, id)
     }
     return safeToOriginal
 }

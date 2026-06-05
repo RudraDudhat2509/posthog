@@ -86,6 +86,16 @@ describe('agent-resolve-resource', () => {
             }
         })
 
+        it('drops tool names absent from the live catalog without throwing', () => {
+            // Only one of authoring-new-agents' tools exists in this partial
+            // catalog — the rest are silently skipped (ground-truth wins).
+            const partial = {
+                'agent-applications-create': { title: 'Create', required_scopes: ['agents:write'] },
+            } as unknown as Parameters<typeof buildToolSurface>[2]
+            const refs = buildToolSurface('authoring-new-agents', ['*'], partial)
+            expect(refs.map((r) => r.name)).toEqual(['agent-applications-create'])
+        })
+
         it('classifies the no-source creator as gated without agents:write, callable with it', () => {
             const readOnly = buildToolSurface('authoring-new-agents', ['agents:read'])
             const create = readOnly.find((t) => t.name === 'agent-applications-revisions-create')!

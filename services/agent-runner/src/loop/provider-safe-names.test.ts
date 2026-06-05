@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { buildToolNameMap, providerSafeName } from './provider-safe-names'
 
@@ -44,6 +44,16 @@ describe('provider-safe-names', () => {
             expect(map.get('posthog_meta-end-turn')).toBe('@posthog/meta-end-turn')
             expect(map.get('posthog_meta-end-session')).toBe('@posthog/meta-end-session')
             expect(map.get('linear__create-issue')).toBe('linear__create-issue')
+        })
+
+        it('warns when two distinct ids collapse to the same safe name', () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            // `a.b` and `a_b` both sanitize to `a_b`; the second wins and the
+            // first would be undispatchable, so the collision must be surfaced.
+            const map = buildToolNameMap(['a.b', 'a_b'])
+            expect(map.get('a_b')).toBe('a_b')
+            expect(warn).toHaveBeenCalledOnce()
+            warn.mockRestore()
         })
     })
 })

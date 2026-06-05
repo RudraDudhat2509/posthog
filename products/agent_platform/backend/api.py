@@ -586,7 +586,10 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         parameters=_PREVIEW_PROXY_PARAMETERS,
         # Document the forwarded body (`run`/`send` carry `message`) so the
         # generated MCP tool exposes it — without this the tool had no way to
-        # pass a chat message. Response is the ingress SSE stream.
+        # pass a chat message. SCHEMA-ONLY: the action never validates against
+        # this serializer; the raw body is forwarded to ingress verbatim (shape
+        # varies by `rest`, extra keys pass through). It exists purely to shape
+        # the generated tool / OpenAPI. Response is the ingress SSE stream.
         request=PreviewProxyInvokeRequestSerializer,
         responses={(200, "text/event-stream"): OpenApiTypes.STR},
     )
