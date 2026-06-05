@@ -63,5 +63,5 @@
         "max_tool_calls": 80,
         "max_wall_seconds": 600
     },
-    "auth": { "mode": "public" }
+    "auth": { "modes": [{ "type": "public" }] }
 }

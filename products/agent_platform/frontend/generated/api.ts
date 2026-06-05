@@ -74,6 +74,7 @@ import type {
     PatchedAgentApplicationApi,
     PatchedAgentMemoryUpdateRequestApi,
     PatchedAgentRevisionApi,
+    PreviewProxyInvokeRequestApi,
     SetEnvKeyRequestApi,
     SetEnvRequestApi,
     SkillTemplateCreateApi,
@@ -1507,11 +1508,14 @@ export const agentApplicationsPreviewProxy = async (
     id: string,
     rest: string,
     params: AgentApplicationsPreviewProxyParams,
+    previewProxyInvokeRequestApi?: PreviewProxyInvokeRequestApi,
     options?: RequestInit
-): Promise<AgentApplicationApi> => {
-    return apiMutator<AgentApplicationApi>(getAgentApplicationsPreviewProxyUrl(projectId, id, rest, params), {
+): Promise<string> => {
+    return apiMutator<string>(getAgentApplicationsPreviewProxyUrl(projectId, id, rest, params), {
         ...options,
         method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(previewProxyInvokeRequestApi),
     })
 }
 
