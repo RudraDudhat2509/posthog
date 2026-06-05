@@ -24,6 +24,7 @@ from posthog.test.base import APIBaseTest
 from parameterized import parameterized
 
 from .api import AgentApplicationViewSet, EventStreamRenderer
+from .serializers import PreviewProxyInvokeRequestSerializer
 
 
 class TestPreviewProxyScope(APIBaseTest):
@@ -57,3 +58,25 @@ class TestPreviewProxyRendering(APIBaseTest):
         self.assertIsNotNone(renderer_classes, "preview_proxy action should declare renderer_classes")
         assert renderer_classes is not None  # type narrowing for mypy
         self.assertIn(EventStreamRenderer, renderer_classes)
+
+
+class TestPreviewProxyInvokeBody(APIBaseTest):
+    """#4 — the proxy forwards the POST body to ingress (`run`/`send` carry
+    `message`), but the action shipped `request=None`, so drf-spectacular
+    published an empty body and the generated MCP tool had no way to pass a
+    message. The action now declares `PreviewProxyInvokeRequestSerializer`;
+    this pins the body shape it documents. (The OpenAPI wiring itself is
+    verified by `hogli build:openapi`.)"""
+
+    def test_invoke_serializer_documents_message_and_session_id(self) -> None:
+        fields = PreviewProxyInvokeRequestSerializer().fields
+        self.assertLessEqual({"message", "session_id"}, set(fields))
+        # Optional: `run` needs only `message`; `cancel`/`listen` need neither.
+        self.assertFalse(fields["message"].required)
+        self.assertFalse(fields["session_id"].required)
+
+    def test_invoke_serializer_validates_run_and_send_bodies(self) -> None:
+        self.assertTrue(PreviewProxyInvokeRequestSerializer(data={"message": "tell me a joke"}).is_valid())
+        self.assertTrue(
+            PreviewProxyInvokeRequestSerializer(data={"session_id": "s-1", "message": "another"}).is_valid()
+        )

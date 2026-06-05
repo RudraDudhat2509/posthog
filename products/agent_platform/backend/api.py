@@ -74,6 +74,7 @@ from .serializers import (
     CloneFromRequestSerializer,
     DecideApprovalRequestSerializer,
     NewDraftRevisionRequestSerializer,
+    PreviewProxyInvokeRequestSerializer,
     PromoteRevisionRequestSerializer,
     SetEnvKeyRequestSerializer,
     SetEnvRequestSerializer,
@@ -583,7 +584,11 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
     @extend_schema(
         operation_id="agent_applications_preview_proxy",
         parameters=_PREVIEW_PROXY_PARAMETERS,
-        request=None,
+        # Document the forwarded body (`run`/`send` carry `message`) so the
+        # generated MCP tool exposes it — without this the tool had no way to
+        # pass a chat message. Response is the ingress SSE stream.
+        request=PreviewProxyInvokeRequestSerializer,
+        responses={(200, "text/event-stream"): OpenApiTypes.STR},
     )
     @action(
         detail=True,
@@ -1414,10 +1419,14 @@ class AgentRevisionViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         application = self.get_application()
         # Fresh revisions start in `draft`. Parent revision is optional — if
         # set, this revision can later be diff'd against it for review.
+        # bundle_uri is optional metadata; fill the `fs://<slug>/` convention
+        # when the caller leaves it blank so a no-source create "just works".
+        bundle_uri = serializer.validated_data.get("bundle_uri") or f"fs://{application.slug}/"
         serializer.save(
             application=application,
             state="draft",
             created_by=self.request.user,
+            bundle_uri=bundle_uri,
         )
 
     def update(self, request: Request, *args, **kwargs) -> Response:
