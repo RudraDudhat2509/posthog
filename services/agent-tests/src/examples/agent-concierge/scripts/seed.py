@@ -42,6 +42,11 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 BUNDLE_ROOT = Path(os.environ.get("BUNDLE_ROOT", SCRIPT_DIR.parent))
 SPEC_FILE = Path(os.environ.get("SPEC_FILE", BUNDLE_ROOT / "spec.json"))
+# Skill bodies are the canonical operator playbooks — single source shared with the
+# MCP `agent-resolve-resource` tool. Seed copies them into the bundle at the paths
+# `spec.skills[].path` declares (`skills/<id>.md`), so the runtime contract is unchanged.
+REPO_ROOT = SCRIPT_DIR.parents[5]
+PLAYBOOKS_ROOT = Path(os.environ.get("PLAYBOOKS_ROOT", REPO_ROOT / "docs" / "agent-platform" / "playbooks"))
 SLUG = os.environ.get("SLUG", "agent-concierge")
 PAT = os.environ.get("PAT")
 API = os.environ.get("POSTHOG_API", "http://localhost:8010").rstrip("/")
@@ -150,14 +155,15 @@ def load_v0_spec() -> dict:
     return spec
 
 
-def load_bundle_files() -> dict[str, str]:
+def load_bundle_files(spec: dict) -> dict[str, str]:
     files: dict[str, str] = {}
     files["agent.md"] = (BUNDLE_ROOT / "agent.md").read_text()
-    skills_dir = BUNDLE_ROOT / "skills"
-    if skills_dir.is_dir():
-        for f in sorted(skills_dir.iterdir()):
-            if f.is_file() and f.suffix == ".md":
-                files[f"skills/{f.name}"] = f.read_text()
+    # Skill bodies come from the canonical playbooks dir, keyed into the bundle at
+    # the bundle-relative `path` each skill declares (basename matches the file in
+    # PLAYBOOKS_ROOT). Keeps one source of truth shared with the MCP resolver tool.
+    for skill in spec.get("skills", []):
+        path = skill["path"]
+        files[path] = (PLAYBOOKS_ROOT / Path(path).name).read_text()
     tests_dir = BUNDLE_ROOT / "tests"
     if tests_dir.is_dir():
         for f in sorted(tests_dir.iterdir()):
@@ -305,7 +311,7 @@ def main() -> None:
         sys.exit(2)
     log(f"target: {API} project={PROJECT_ID} slug={SLUG}")
     spec = load_v0_spec()
-    files = load_bundle_files()
+    files = load_bundle_files(spec)
     target_manifest = per_file_sha256(files)
     log(f"target bundle: {len(files)} files")
 

@@ -1,6 +1,17 @@
 import { z } from 'zod'
 
+// Relative (not `@/`) import: this module is loaded by the tsx schema-generation
+// script, and `playbookIds` is pure constants — no `.md` imports to choke on.
+import { PLAYBOOK_IDS, PLAYBOOK_URI_PREFIX } from '../tools/agentPlatform/playbookIds'
 import { PropertyFilter } from './query'
+
+export const AgentResolveResourceSchema = z.object({
+    resource: z
+        .string()
+        .describe(
+            `Which operator playbook to fetch. Accepts either a bare id (one of: ${PLAYBOOK_IDS.join(', ')}) or its resource URI (\`${PLAYBOOK_URI_PREFIX}<id>\`). Each playbook is also exposed as a first-class MCP resource at that URI, so clients that read resources can fetch it directly. A playbook is a markdown guide for doing a class of agent-platform operations well — the same skills the agent concierge uses.`
+        ),
+})
 
 export const ExternalDataJobsAfterSchema = z
     .string()
@@ -194,7 +205,7 @@ export const FeedbackSubmitSchema = z.object({
         .string()
         .optional()
         .describe(
-            'Clear, concise bullet points describing friction with the MCP server itself — what slowed you down or made you guess. Quote the exact tool name, parameter, or error text. Keep it about the MCP, not the user\'s task or data.'
+            "Clear, concise bullet points describing friction with the MCP server itself — what slowed you down or made you guess. Quote the exact tool name, parameter, or error text. Keep it about the MCP, not the user's task or data."
         ),
     suggested_improvement: z
         .string()

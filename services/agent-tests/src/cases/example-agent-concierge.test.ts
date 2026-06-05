@@ -20,6 +20,9 @@ import { AgentSpecSchema } from '@posthog/agent-shared'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const BUNDLE_ROOT = resolve(__dirname, '../examples/agent-concierge')
 const AGENT_STACK_YAML = resolve(__dirname, '../../../mcp/definitions/agent_platform.yaml')
+// Skill bodies live in the shared playbooks dir (single source with the MCP
+// `agent-resolve-resource` tool); the bundle keys them under `skills/<name>.md`.
+const PLAYBOOKS_ROOT = resolve(__dirname, '../../../../docs/agent-platform/playbooks')
 
 type ConciergeMcpToolEntry =
     | string
@@ -69,9 +72,9 @@ async function loadBundle(): Promise<{ spec: ConciergeSpec; files: Record<string
     const files: Record<string, string> = {}
     files['agent.md'] = await readFile(join(BUNDLE_ROOT, 'agent.md'), 'utf-8')
     files['README.md'] = await readFile(join(BUNDLE_ROOT, 'README.md'), 'utf-8')
-    const skillFiles = await readdir(join(BUNDLE_ROOT, 'skills'))
-    for (const sf of skillFiles) {
-        files[`skills/${sf}`] = await readFile(join(BUNDLE_ROOT, 'skills', sf), 'utf-8')
+    const skillFiles = await readdir(PLAYBOOKS_ROOT)
+    for (const sf of skillFiles.filter((f) => f.endsWith('.md'))) {
+        files[`skills/${sf}`] = await readFile(join(PLAYBOOKS_ROOT, sf), 'utf-8')
     }
     return { spec, files }
 }

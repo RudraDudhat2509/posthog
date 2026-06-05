@@ -76,9 +76,13 @@ calling any create endpoint. Cover:
   See `skills/secrets-and-integrations` → "Trigger-required secrets".
 - **`limits`** — usually defaults are fine. Tighten if the user
   needs a hard cost cap.
-- **`auth`** — for chat/mcp triggers, almost always `pat` or
-  `posthog_internal`. For webhook triggers, usually `shared_secret`.
-  `public` is unsafe unless the agent is genuinely B2C.
+- **`auth`** — an **array of typed modes**, never a scalar. The shape is
+  `{ "modes": [ { "type": "pat" }, … ] }`. The legacy `{ "mode": "public" }`
+  scalar that some old demo agents still carry is silently dropped on write —
+  do NOT copy it from an existing agent; write the `modes` array. Per mode:
+  `pat` / `posthog_internal` for chat/mcp (console invokes with the user's PAT),
+  `shared_secret` (with a `header`) for webhooks, `oauth` (with an `issuer`) for
+  B2B. `{ "type": "public" }` is unsafe unless the agent is genuinely B2C.
 - **`reasoning`** — start unset (provider default). Bump to
   `medium` if the agent reasons hard; `high` if it does long
   triage; rarely `xhigh`.
@@ -93,6 +97,28 @@ agent-applications-create   → returns { id, slug }
 agent-applications-revisions-create application_id=<id>
                                                   → returns empty draft revision id
 ```
+
+**The first revision is minted by `agent-applications-revisions-create`
+with `application_id` only — no source revision.** A fresh app ships
+with zero revisions, so this is the one creator that does NOT need a
+source. Two traps that make agents wrongly conclude it's missing:
+
+- **Name collision.** `agent-applications-create` makes the _app_;
+  `agent-applications-revisions-create` makes the first _revision_.
+  They are different tools with near-identical names. Don't stop at
+  the first match.
+- **The `*-from`/`*-new-draft` creators are NOT substitutes here.**
+  `agent-applications-revisions-new-draft-create` and
+  `…-clone-from-create` both require a `source_revision_id` to clone —
+  useless on a brand-new app, and they drag a donor spec through the
+  door. Do NOT seed from another agent as a workaround.
+
+If you can't find `agent-applications-revisions-create`, you have a
+_discovery_ problem, not a missing tool: list the full tool set (don't
+rely on one `search` pattern) and match the exact string. If it's
+genuinely absent from the full list while the `*-new-draft` creator is
+present, your credential is the issue (the whole `agent-applications-*`
+surface needs `agents:read` + `agents:write`) — not the server.
 
 In the console, `@posthog/ui/focus` to the new application + the
 new draft revision.

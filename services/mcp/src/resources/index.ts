@@ -2,8 +2,9 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 
 import type { Context } from '@/tools/types'
 
-import type { ContextMillResource, ResourceManifest } from './manifest-types'
 import { fetchContextMillResources, filterValidEntries, loadManifestFromArchive } from './internals'
+import type { ContextMillResource, ResourceManifest } from './manifest-types'
+import { registerPlaybookResources } from './playbooks'
 
 export { fetchContextMillResources, filterValidEntries, loadManifestFromArchive }
 
@@ -50,5 +51,7 @@ async function registerContextMillResources(server: McpServer, context: Context)
 }
 
 export async function registerResources(server: McpServer, context: Context): Promise<void> {
+    // Static, always-on: agent-platform operator playbooks at fixed URIs.
+    registerPlaybookResources(server)
     await registerContextMillResources(server, context)
 }

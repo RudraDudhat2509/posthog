@@ -31,7 +31,7 @@ tools:
         description: >
             Create a new agent. Requires `name` + `slug` (unique within the team). The fresh application has no
             revisions; create a draft via `agent-applications-revisions-create`, populate its bundle, then freeze +
-            promote.
+            promote. Playbook: read the `authoring-new-agents` playbook via `agent-resolve-resource` for the end-to-end authoring flow.
     agent-applications-destroy:
         operation: agent_applications_destroy
         enabled: true
@@ -59,7 +59,7 @@ tools:
         description: >
             Remove one key from the encrypted env. No-op when the key wasn't set. Use this when a secret is no longer
             required by the spec or after a credential is known to be compromised. Does NOT trigger session restarts —
-            in-flight sessions keep the value they resolved at start.
+            in-flight sessions keep the value they resolved at start. Playbook: read the `secrets-and-integrations` playbook via `agent-resolve-resource` for the credential punch-out flow.
     agent-applications-env-keys-get:
         operation: agent_applications_env_keys_get
         enabled: true
@@ -73,7 +73,7 @@ tools:
         description: >
             Returns `{ key, is_set }` for one name. The value is never returned. Use as a pre-check before asking the
             user to set or rotate a key, and again after the user completes the punch-out flow to confirm the write
-            landed.
+            landed. Playbook: read the `secrets-and-integrations` playbook via `agent-resolve-resource` for the credential punch-out flow.
     agent-applications-env-keys-list:
         operation: agent_applications_env_keys_list
         enabled: true
@@ -87,7 +87,7 @@ tools:
         description: >
             Returns `{ keys: [name, ...] }` — names only, never values. Use to know which declared secrets are already
             populated so you don't ask the user to set something that's already set. Pair with
-            `agent-applications-revisions-retrieve` (`spec.secrets[]`) to spot which declared keys are still unset.
+            `agent-applications-revisions-retrieve` (`spec.secrets[]`) to spot which declared keys are still unset. Playbook: read the `secrets-and-integrations` playbook via `agent-resolve-resource` for the credential punch-out flow.
     agent-applications-env-keys-set:
         operation: agent_applications_env_keys_set
         enabled: false
@@ -116,7 +116,7 @@ tools:
         title: List agent applications
         description: >
             List every agent application in the project. Returns id, slug, name, description, live_revision, archived
-            state. Use the slug to drive subsequent calls — it's stable and human-readable.
+            state. Use the slug to drive subsequent calls — it's stable and human-readable. Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.
     agent-applications-partial-update:
         operation: agent_applications_partial_update
         enabled: true
@@ -166,7 +166,7 @@ tools:
         description: >
             Fetch one application by id or slug (both unique within the team). Returns metadata only — to inspect the
             running spec or bundle, look up the live revision via `agent-applications-revisions-list` then call
-            `agent-applications-revisions-retrieve` and `agent-applications-revisions-manifest-retrieve`.
+            `agent-applications-revisions-retrieve` and `agent-applications-revisions-manifest-retrieve`. Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.
     agent-applications-revisions-archive-create:
         operation: agent_applications_revisions_archive_create
         enabled: true
@@ -179,7 +179,7 @@ tools:
         title: Archive a revision
         description: >
             Mark a revision archived. If it was the live revision, clears the parent application's `live_revision` (the
-            app has no deployable version until another revision is promoted). Idempotent.
+            app has no deployable version until another revision is promoted). Idempotent. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.
     agent-applications-revisions-bundle-retrieve:
         operation: agent_applications_revisions_bundle_retrieve
         enabled: true
@@ -192,7 +192,7 @@ tools:
         title: Pull every file in a revision's bundle
         description: >
             Bulk download — returns `{ files: { path: utf-8 content, … } }` for every file in the bundle. Use when you
-            want to edit the whole agent locally; mutate files, then push back via the bundle PUT (replace mode).
+            want to edit the whole agent locally; mutate files, then push back via the bundle PUT (replace mode). Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.
     agent-applications-revisions-bundle-update:
         operation: agent_applications_revisions_bundle_update
         enabled: true
@@ -206,7 +206,7 @@ tools:
         description: >
             Body `{ files: { path: content, … }, mode: "replace" | "merge" }`. `replace` wipes the existing bundle
             before writing the new set (use after a full edit); `merge` upserts (use for incremental adds). Only
-            `state=draft` revisions accept this.
+            `state=draft` revisions accept this. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.
     agent-applications-revisions-clone-from-create:
         operation: agent_applications_revisions_clone_from_create
         enabled: true
@@ -220,7 +220,7 @@ tools:
         description: >
             Copy every file in `source_revision_id`'s bundle into this (draft) revision. Use after
             `agent-applications-revisions-create` if you didn't go through `new-draft` for some reason. Both revisions
-            must belong to the same team.
+            must belong to the same team. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.
     agent-applications-revisions-create:
         operation: agent_applications_revisions_create
         enabled: true
@@ -235,7 +235,7 @@ tools:
             Create a new revision in state `draft`. Body shape mirrors the AgentRevision serializer — the only fields
             you typically set are `spec` (initial JSON) and `parent_revision` (optional, lets the diff UI show what
             you're changing). The bundle starts empty; use `agent-applications-revisions-clone-from-create` or
-            `agent-applications-revisions-new-draft-create` to seed it from an existing revision.
+            `agent-applications-revisions-new-draft-create` to seed it from an existing revision. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.
     agent-applications-revisions-cron-fire-create:
         operation: agent_applications_revisions_cron_fire_create
         enabled: true
@@ -253,7 +253,7 @@ tools:
             `request_id` — pass a stable id per logical click so repeat fires resolve to the same session instead of
             stacking duplicates. Returns `{ ok, session_id, fired_at, idempotency_key }`; track the session via
             `agent-applications-sessions-retrieve` to read the conversation. Authoring-loop completion piece — without
-            this, "did my prompt do the right thing?" is unanswerable until the cron actually fires.
+            this, "did my prompt do the right thing?" is unanswerable until the cron actually fires. Playbook: read the `debugging-sessions` playbook via `agent-resolve-resource` for the failure taxonomy and how to read the logs.
     agent-applications-revisions-destroy:
         operation: agent_applications_revisions_destroy
         enabled: false
@@ -268,7 +268,7 @@ tools:
             idempotent: true
         title: Delete one file
         description: |
-            Remove the file at `?path=…` from a draft revision. Idempotent — deleting an already-absent file is a no-op.
+            Remove the file at `?path=…` from a draft revision. Idempotent — deleting an already-absent file is a no-op. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.
     agent-applications-revisions-file-retrieve:
         operation: agent_applications_revisions_file_retrieve
         enabled: true
@@ -281,7 +281,7 @@ tools:
         title: Read one file
         description: >
             Returns `{ path, content }` for one file in the bundle. Pass `?path=…` (e.g. `?path=skills/research.md`).
-            Works on any revision state.
+            Works on any revision state. Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.
     agent-applications-revisions-file-update:
         operation: agent_applications_revisions_file_update
         enabled: true
@@ -294,7 +294,7 @@ tools:
         title: Write one file
         description: >
             Body `{ content: "…" }`. Creates or overwrites the file at `?path=…` in a draft revision. Use for targeted
-            edits (one skill, one tool source); for bulk changes use the bundle PUT.
+            edits (one skill, one tool source); for bulk changes use the bundle PUT. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.
     agent-applications-revisions-freeze-create:
         operation: agent_applications_revisions_freeze_create
         enabled: true
@@ -308,7 +308,7 @@ tools:
         description: >
             Walks the bundle, computes a manifest sha256, stamps it on the row, flips state `draft → ready`. After this
             the bundle is immutable. Idempotent — freezing a `ready` revision is a no-op that returns the existing
-            sha256.
+            sha256. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.
     agent-applications-revisions-list:
         operation: agent_applications_revisions_list
         enabled: true
@@ -321,7 +321,7 @@ tools:
         title: List revisions of an application
         description: >
             List every revision (draft, ready, live, archived) for one application, newest first. Use to find the
-            current live revision id or pick a known-good revision to clone for an edit.
+            current live revision id or pick a known-good revision to clone for an edit. Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.
     agent-applications-revisions-manifest-retrieve:
         operation: agent_applications_revisions_manifest_retrieve
         enabled: true
@@ -335,7 +335,7 @@ tools:
         description: >
             Returns `{ revision_id, state, bundle_sha256, files: [{ path, size, sha256 }, …] }`. Use to discover what's
             in a bundle without pulling all the bytes — sha256 lets you spot which files have changed since you last
-            looked.
+            looked. Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.
     agent-applications-revisions-new-draft-create:
         operation: agent_applications_revisions_new_draft_create
         enabled: true
@@ -349,7 +349,7 @@ tools:
         description: >
             One-shot helper: creates a draft revision under `application_id` and clones every file from
             `source_revision_id` into the new bundle in a single round-trip. Use this for the common "edit live"
-            workflow — branch from the current live revision, mutate files, freeze, promote.
+            workflow — branch from the current live revision, mutate files, freeze, promote. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.
     agent-applications-revisions-partial-update:
         operation: agent_applications_revisions_partial_update
         enabled: true
@@ -363,7 +363,7 @@ tools:
         description: >
             Replace `spec` on a draft revision. Only `state=draft` revisions accept spec edits — promote bumps the
             revision to `ready` which freezes the spec. Validation against the AgentSpec zod schema runs on the runner
-            side; an invalid spec will surface when the next session starts, not here.
+            side; an invalid spec will surface when the next session starts, not here. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.
     agent-applications-revisions-promote-create:
         operation: agent_applications_revisions_promote_create
         enabled: true
@@ -377,7 +377,7 @@ tools:
         description: >
             Flips a `ready` revision to `live` and sets the parent application's `live_revision`. The previously live
             revision is archived automatically. Requires `state=ready` and `bundle_sha256` set (call `freeze` first).
-            Idempotent: promoting an already-live revision is a no-op.
+            Idempotent: promoting an already-live revision is a no-op. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.
     agent-applications-revisions-retrieve:
         operation: agent_applications_revisions_retrieve
         enabled: true
@@ -391,7 +391,7 @@ tools:
         description: >
             Fetch one revision's metadata: state, spec (the structural JSON), bundle_uri, bundle_sha256, parent revision
             id, timestamps. For the bundle contents see `agent-applications-revisions-manifest-retrieve` /
-            `agent-applications-revisions-bundle-retrieve`.
+            `agent-applications-revisions-bundle-retrieve`. Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.
     agent-applications-revisions-system-prompt:
         operation: agent_applications_revisions_system_prompt
         enabled: true
@@ -407,7 +407,7 @@ tools:
             preamble + agent.md (or `spec.entrypoint`) + skills index. Use to verify what the model actually sees before
             promoting; particularly useful for confirming `spec.framework_prompt.omit` opt-outs took effect or for
             debugging author-vs-framework precedence. Response also includes `framework_prompt_version` so you can tell
-            whether a pin (`spec.framework_prompt.version_pin`) is in effect. Works on any revision state.
+            whether a pin (`spec.framework_prompt.version_pin`) is in effect. Works on any revision state. Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.
     agent-applications-revisions-update:
         operation: agent_applications_revisions_update
         enabled: false
@@ -425,7 +425,7 @@ tools:
             Pre-flight checks before deploying. Returns `{ ok, errors: [...] }`. Catches: missing entrypoint file,
             unknown native tool ids, custom tools missing `compiled.js` / `schema.json`, skill paths that don't exist in
             the bundle, declared secrets that aren't set in the application env. Works on any revision state — use this
-            on a draft before calling `agent-applications-revisions-freeze-create`.
+            on a draft before calling `agent-applications-revisions-freeze-create`. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.
     agent-applications-session-logs:
         operation: agent_applications_session_logs
         enabled: false
@@ -446,7 +446,7 @@ tools:
             over the whole conversation). The transcript body is omitted — use `agent-applications-sessions-retrieve`
             for that. Filters: `state` (comma-separated for multiple, e.g. `completed,failed`), `revision_id` (UUID),
             `created_after` / `created_before` (ISO datetimes). Paging via `limit` (default 100, capped at 500) +
-            `offset`. Filters AND together.
+            `offset`. Filters AND together. Playbook: read the `debugging-sessions` playbook via `agent-resolve-resource` for the failure taxonomy and how to read the logs.
     agent-applications-sessions-retrieve:
         operation: agent_applications_sessions_retrieve
         enabled: true
@@ -463,7 +463,7 @@ tools:
             over the entire session. Pass `last_n=<int>` to trim the response to the most recent N messages — useful for
             long sessions where you only care about the tail; `conversation_trimmed: true` plus
             `conversation_total_turns` tells you how much was hidden, and `usage_total` is still computed over the full
-            untrimmed conversation so cost reporting stays accurate.
+            untrimmed conversation so cost reporting stays accurate. Playbook: read the `debugging-sessions` playbook via `agent-resolve-resource` for the failure taxonomy and how to read the logs.
     agent-applications-set-env-create:
         operation: agent_applications_set_env_create
         enabled: true
@@ -477,7 +477,7 @@ tools:
         description: >
             Body `{ env: { KEY: "value", … } }`. The whole env is replaced (not patched); pass the full set you want
             available to the runner. Encrypted at rest with the team's Fernet keys; the worker decrypts at session start
-            and feeds the values to tool sandboxes as opaque nonces (raw secrets never leave Django).
+            and feeds the values to tool sandboxes as opaque nonces (raw secrets never leave Django). Playbook: read the `secrets-and-integrations` playbook via `agent-resolve-resource` for the credential punch-out flow.
     agent-applications-stats:
         operation: agent_applications_stats
         enabled: false
@@ -497,7 +497,7 @@ tools:
         description: >
             Create a new shared custom-tool template. Requires `source` (TypeScript), `compiled_js` (the bundler
             output), and `args_schema` (TypeBox / JSON Schema for the tool's args). The bundler runs client-side during
-            authoring; the registry just stores the artifact pair.
+            authoring; the registry just stores the artifact pair. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-custom-tool-templates-list:
         operation: agent_custom_tool_templates_list
         enabled: true
@@ -512,7 +512,7 @@ tools:
         description: >
             List the current (latest) version of every custom TypeScript tool template visible to the team. Use to
             discover existing tools before authoring a new one or wiring one into an agent's `spec.tools[]` via
-            `from_template`.
+            `from_template`. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-custom-tool-templates-name-archive-create:
         operation: agent_custom_tool_templates_name_archive_create
         enabled: true
@@ -525,7 +525,7 @@ tools:
         title: Archive a custom tool template
         description: >
             Soft-delete every version of this template. Frozen revisions that pin it keep working; new agents can no
-            longer reference it.
+            longer reference it. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-custom-tool-templates-name-duplicate-create:
         operation: agent_custom_tool_templates_name_duplicate_create
         enabled: true
@@ -537,7 +537,7 @@ tools:
             idempotent: false
         title: Duplicate a custom tool template
         description: |
-            Copy a template's current source + compiled output under a new name. Produces v1 of the duplicate.
+            Copy a template's current source + compiled output under a new name. Produces v1 of the duplicate. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-custom-tool-templates-name-publish-create:
         operation: agent_custom_tool_templates_name_publish_create
         enabled: true
@@ -551,7 +551,7 @@ tools:
         description: >
             Append a new version. Provide EITHER `source` (full overwrite) OR `edits[]` (structured find/replace);
             `compiled_js` must accompany either form because the bundler runs client-side. `args_schema` /
-            `returns_schema` / `requires_secrets` are optional overrides — omit to keep the prior values.
+            `returns_schema` / `requires_secrets` are optional overrides — omit to keep the prior values. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-custom-tool-templates-name-retrieve:
         operation: agent_custom_tool_templates_name_retrieve
         enabled: true
@@ -564,7 +564,7 @@ tools:
         title: Retrieve a custom tool template
         description: >
             Fetch the latest version (default) or a specific version with `?version=N`. Returns the full `source` +
-            `compiled_js` + schemas so the concierge can read before edit.
+            `compiled_js` + schemas so the concierge can read before edit. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-custom-tool-templates-name-usages-list:
         operation: agent_custom_tool_templates_name_usages_list
         enabled: true
@@ -577,7 +577,7 @@ tools:
         title: Frozen agents pinning this custom tool template
         description: >
             Every frozen agent revision that pins this custom tool template (any version, or filter by
-            `?pinned_version=N`). Use before archiving to see who'd be affected.
+            `?pinned_version=N`). Use before archiving to see who'd be affected. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-custom-tool-templates-name-versions-list:
         operation: agent_custom_tool_templates_name_versions_list
         enabled: true
@@ -589,7 +589,7 @@ tools:
             idempotent: true
         title: Custom tool template version history
         description: |
-            Every version row for this template name, newest first, with publisher + timestamp.
+            Every version row for this template name, newest first, with publisher + timestamp. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-fleet-live-sessions:
         operation: agent_fleet_live_sessions
         enabled: false
@@ -637,7 +637,7 @@ tools:
             Read-only catalog of every `@posthog/*` native tool an agent can wire into `spec.tools`. Each entry includes
             the id, description, args schema (TypeBox-shaped), required integrations + scopes, and a cost hint (`cheap`
             / `medium` / `expensive`). Authoring flows use this to validate tool ids before writing them into a
-            revision's spec.
+            revision's spec. Playbook: read the `authoring-new-agents` playbook via `agent-resolve-resource` for the end-to-end authoring flow.
     agent-skill-templates-create:
         operation: agent_skill_templates_create
         enabled: true
@@ -651,7 +651,7 @@ tools:
         description: >
             Create a new shared skill template under the active team. `name` is a slug (`research-flow`); the body is
             markdown (the SKILL.md), `files[]` are optional companion files (examples, schemas). Produces v1; later
-            edits go through `agent-skill-templates-name-publish-create`.
+            edits go through `agent-skill-templates-name-publish-create`. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-skill-templates-list:
         operation: agent_skill_templates_list
         enabled: true
@@ -666,7 +666,7 @@ tools:
         description: >
             List the current (latest) version of every skill template visible to the team — both team-owned and
             canonical (`@posthog/*`) rows. Use to discover what's already on the shelf before authoring a new skill.
-            `?search=<substring>` matches against name + description.
+            `?search=<substring>` matches against name + description. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-skill-templates-name-archive-create:
         operation: agent_skill_templates_name_archive_create
         enabled: true
@@ -679,7 +679,7 @@ tools:
         title: Archive a skill template
         description: >
             Soft-delete every version of this template. Frozen revisions that still pin it keep working (the freeze copy
-            is independent); new agents can no longer reference it.
+            is independent); new agents can no longer reference it. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-skill-templates-name-duplicate-create:
         operation: agent_skill_templates_name_duplicate_create
         enabled: true
@@ -693,7 +693,7 @@ tools:
         description: >
             Copy a template's current body + companion files under a new name. Produces v1 of the duplicate; the
             source's version history is not carried over. Useful when a canonical `@posthog/*` template is the starting
-            point for a team-specific skill.
+            point for a team-specific skill. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-skill-templates-name-files-create:
         operation: agent_skill_templates_name_files_create
         enabled: true
@@ -706,7 +706,7 @@ tools:
         title: Add a companion file to a skill template
         description: >
             Attach a new file (path + content) to the latest version of this template. Path is relative; will land at
-            `bundle/skills/<alias>/<path>` when an agent pins this skill at freeze time.
+            `bundle/skills/<alias>/<path>` when an agent pins this skill at freeze time. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-skill-templates-name-files-destroy:
         operation: agent_skill_templates_name_files_destroy
         enabled: true
@@ -719,7 +719,7 @@ tools:
         title: Remove a companion file from a skill template
         description: >
             Drop a file by path from the latest version of this template. Affects future freezes; already-frozen
-            revisions keep their copy.
+            revisions keep their copy. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-skill-templates-name-files-rename-create:
         operation: agent_skill_templates_name_files_rename_create
         enabled: true
@@ -732,7 +732,7 @@ tools:
         title: Rename a companion file
         description: >
             Move `from_path` → `to_path` for a companion file on the latest version. Use when restructuring an example
-            tree, e.g. `examples/case-a.md` → `examples/onboarding/case-a.md`.
+            tree, e.g. `examples/case-a.md` → `examples/onboarding/case-a.md`. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-skill-templates-name-publish-create:
         operation: agent_skill_templates_name_publish_create
         enabled: true
@@ -746,7 +746,7 @@ tools:
         description: >
             Append a new version. Provide EITHER `body` (full overwrite) OR `edits[]` (structured find/replace where
             each `old` must match exactly once in the current body — mirrors LLMSkill's edit shape). Companion files
-            carry forward unchanged. Returns the freshly-stamped v(n+1) row.
+            carry forward unchanged. Returns the freshly-stamped v(n+1) row. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-skill-templates-name-retrieve:
         operation: agent_skill_templates_name_retrieve
         enabled: true
@@ -759,7 +759,7 @@ tools:
         title: Retrieve a skill template
         description: >
             Fetch a skill template's latest version (default) or a specific version with `?version=N`. Returns the full
-            body + companion files, so the concierge can read before edit.
+            body + companion files, so the concierge can read before edit. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-skill-templates-name-usages-list:
         operation: agent_skill_templates_name_usages_list
         enabled: true
@@ -773,7 +773,7 @@ tools:
         description: >
             Every frozen agent revision that pins this skill template (any version, or filter by `?pinned_version=N`).
             Each row carries the agent slug + name + revision short id + pinned version. Use before archiving to see
-            who'd be affected.
+            who'd be affected. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.
     agent-skill-templates-name-versions-list:
         operation: agent_skill_templates_name_versions_list
         enabled: true
@@ -786,4 +786,4 @@ tools:
         title: Skill template version history
         description: >
             Every version row for this template name, newest first, with publisher + timestamp. The single `is_latest:
-            true` row marks the current version; older rows are read-only history.
+            true` row marks the current version; older rows are read-only history. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.

@@ -13,6 +13,13 @@ const PROMPTS = [
         src: 'products/posthog_ai/skills/querying-posthog-data/references/guidelines.md',
         dest: 'shared/guidelines.md',
     },
+    {
+        // Operator playbooks for the agent platform — embedded so the
+        // `agent-resolve-resource` tool can serve them. Single source shared with
+        // the agent concierge bundle (services/agent-tests/.../agent-concierge).
+        src: 'docs/agent-platform/playbooks',
+        dest: 'shared/playbooks',
+    },
 ]
 
 for (const prompt of PROMPTS) {
