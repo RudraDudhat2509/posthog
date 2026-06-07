@@ -7,6 +7,8 @@ from temporalio.worker import ActivityInboundInterceptor, ExecuteActivityInput, 
 
 from posthog.temporal.llm_analytics.metrics import ExecutionTimeRecorder, get_metric_meter
 
+SCORE_CHUNK_ACTIVITY_TYPE = "score_chunk_activity"
+
 SCORE_CHUNK_LATENCY_HISTOGRAM = "surfacing_scoring_score_chunk_activity_execution_latency"
 
 SURFACING_SCORING_LATENCY_HISTOGRAM_METRICS = (SCORE_CHUNK_LATENCY_HISTOGRAM,)
@@ -46,7 +48,7 @@ class SurfacingScoringMetricsInterceptor(Interceptor):
 
 class _SurfacingScoringActivityInterceptor(ActivityInboundInterceptor):
     async def execute_activity(self, input: ExecuteActivityInput) -> typing.Any:
-        if activity.info().activity_type != "score_chunk_activity":
+        if activity.info().activity_type != SCORE_CHUNK_ACTIVITY_TYPE:
             return await super().execute_activity(input)
         with ExecutionTimeRecorder(
             SCORE_CHUNK_LATENCY_HISTOGRAM,
