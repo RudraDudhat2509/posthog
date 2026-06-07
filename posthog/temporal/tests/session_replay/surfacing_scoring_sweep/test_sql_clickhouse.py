@@ -1,5 +1,3 @@
-"""ClickHouse tests for `fetch_features_sql` / `count_unscored_sql`."""
-
 from __future__ import annotations
 
 import re
@@ -24,6 +22,10 @@ class TestFetchFeaturesSqlShape:
         sql = fetch_features_sql()
         assert "(f.team_id, f.session_id) GLOBAL IN" in sql
 
+    def test_aggregated_stats_filters_features_by_lookback(self) -> None:
+        sql = fetch_features_sql()
+        assert "f.min_first_timestamp >= now() - toIntervalDay(%(lookback_days)s)" in sql
+
     def test_eligible_sessions_orders_before_limit(self) -> None:
         sql = fetch_features_sql()
         match = re.search(
@@ -44,6 +46,11 @@ class TestFetchFeaturesSqlShape:
         assert "e.distinct_id," in sql
         assert "e.min_first_timestamp," in sql
 
+    def test_eligible_sessions_lookback_reuses_select_alias_in_having(self) -> None:
+        sql = fetch_features_sql()
+        assert "AND min_first_timestamp >= now() - toIntervalDay(%(lookback_days)s)" in sql
+        assert "AND min(min_first_timestamp) >= now() - toIntervalDay(%(lookback_days)s)" not in sql
+
     def test_count_unscored_includes_lookback_and_chunking(self) -> None:
         sql = count_unscored_sql()
         assert "%(lookback_days)s" in sql
@@ -56,8 +63,6 @@ class TestEligibleSessionsJoinClickhouse(ClickhouseTestMixin, BaseTest):
 
     def setUp(self) -> None:
         super().setUp()
-        # session_replay_features isn't in the global truncate list (posthog/conftest.py),
-        # so other tests can leave residual rows around — clear the slate explicitly.
         sync_execute(TRUNCATE_SESSION_REPLAY_FEATURES_TABLE_SQL())
 
     def _insert_session_replay_event(

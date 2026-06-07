@@ -27,7 +27,7 @@ DEFAULT_USER_COST_LIMIT = UserCostLimit(
 DEFAULT_PRODUCT_COST_LIMITS: dict[str, "ProductCostLimit"] = {
     "llm_gateway": ProductCostLimit(limit_usd=1000.0, window_seconds=86400),
     "wizard": ProductCostLimit(limit_usd=2000.0, window_seconds=86400),
-    "posthog_code": ProductCostLimit(limit_usd=1000.0, window_seconds=3600),
+    "posthog_code": ProductCostLimit(limit_usd=5000.0, window_seconds=3600),
     "background_agents": ProductCostLimit(limit_usd=1000.0, window_seconds=3600),
     "django": ProductCostLimit(limit_usd=5000.0, window_seconds=86400),
     "signals": ProductCostLimit(limit_usd=5000.0, window_seconds=86400),
@@ -41,9 +41,9 @@ DEFAULT_USER_COST_LIMITS: dict[str, "UserCostLimit"] = {
         sustained_window_seconds=2592000,  # 30 days
     ),
     "posthog_code": UserCostLimit(
-        burst_limit_usd=200.0,
+        burst_limit_usd=500.0,
         burst_window_seconds=86400,
-        sustained_limit_usd=1000.0,
+        sustained_limit_usd=3000.0,
         sustained_window_seconds=2592000,
     ),
     "background_agents": UserCostLimit(
@@ -61,9 +61,9 @@ DEFAULT_USER_COST_LIMITS: dict[str, "UserCostLimit"] = {
 }
 
 FREE_PLAN_COST_LIMIT = UserCostLimit(
-    burst_limit_usd=50.0,
+    burst_limit_usd=75.0,
     burst_window_seconds=86400,
-    sustained_limit_usd=50.0,
+    sustained_limit_usd=75.0,
     sustained_window_seconds=2592000,
 )
 
@@ -141,6 +141,13 @@ class Settings(BaseSettings):
     # Project token for AI observability events
     posthog_project_token: str | None = None
     posthog_host: str = "https://us.i.posthog.com"
+
+    # Optional secondary capture target. When set, every $ai_generation event
+    # is mirrored to this PostHog instance after the primary capture, so the
+    # EU deployment can land EU customer events on EU PostHog (team_id=1)
+    # for the regional billing usage_report to attribute them.
+    posthog_secondary_project_token: str | None = None
+    posthog_secondary_host: str | None = None
 
     metrics_enabled: bool = True
 

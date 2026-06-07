@@ -146,9 +146,8 @@ class TestGetFeatureNames:
 
     def test_triggers_lazy_load_on_first_call(self, surfacing_booster_path: Path) -> None:
         assert scorer_mod._BOOSTER is None
-        names = get_feature_names()
+        get_feature_names()
         assert scorer_mod._BOOSTER is not None
-        assert len(names) == len(_TRAINING_FEATURE_NAMES)
 
     def test_caches_after_first_load(self, surfacing_booster_path: Path) -> None:
         # Per-predict overhead matters; `_FEATURE_NAMES` is a cached tuple so

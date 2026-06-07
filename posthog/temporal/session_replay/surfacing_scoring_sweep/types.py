@@ -39,28 +39,18 @@ class ChunkSpec:
 
 @dataclass
 class ListChunksResult:
-    """Output of `list_chunks_activity`.
-
-    A single CH count tells the workflow whether the tick has work to do at
-    all (avoids fanning out N empty activities when nothing is unscored).
-    """
-
     chunks: list[ChunkSpec] = field(default_factory=list)
     estimated_unscored_sessions: int = 0
 
 
 @dataclass
 class ChunkResult:
-    """Per-chunk outcome reported back to the parent workflow."""
-
     chunk_id: int
     scored: int = 0
 
 
 @dataclass
 class ScoreSessionsBatchResult:
-    """Aggregated result of one tick. Useful for Temporal UI / metrics surface."""
-
     total_scored: int = 0
     chunks_dispatched: int = 0
     chunks_failed: int = 0

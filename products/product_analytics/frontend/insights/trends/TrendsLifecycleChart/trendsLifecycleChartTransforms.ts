@@ -1,5 +1,6 @@
+import type { Series, TimeSeriesBarChartConfig } from '@posthog/quill-charts'
+
 import { getBarColorFromStatus } from 'lib/colors'
-import type { Series, TimeSeriesBarChartConfig } from 'lib/hog-charts'
 import { capitalizeFirstLetter } from 'lib/utils'
 
 import type { CurrencyCode, TrendsFilter } from '~/queries/schema/schema-general'
@@ -41,12 +42,13 @@ export function buildTrendsLifecycleSeries<R extends TrendsLifecycleResultLike, 
     results: R[],
     opts: BuildTrendsLifecycleSeriesOpts<R, M> = {}
 ): Series<M>[] {
-    // Stable lifecycle order: new → resurrecting → returning → dormant.
-    // d3.stack emits layers in series order, so dormant ends up at the bottom of the
-    // diverging stack (its data is negative) and renders below the zero baseline.
+    // Stable lifecycle order: dormant → returning → resurrecting → new — matches the
+    // legacy lifecycle chart (`trendsDataLogic.ts:197`) so the legend reads top-down the
+    // same way. Dormant's data is negative, so the diverging stack still renders it below
+    // the zero baseline regardless of its position in the series array.
     const ordered = results
         .map((r, index) => ({ r, originalIndex: index }))
-        .sort((a, b) => lifecycleStatusOrder(a.r.status) - lifecycleStatusOrder(b.r.status))
+        .sort((a, b) => lifecycleStatusOrder(b.r.status) - lifecycleStatusOrder(a.r.status))
 
     return ordered.map(({ r, originalIndex }) => {
         const excluded = opts.getHidden ? opts.getHidden(r, originalIndex) : false

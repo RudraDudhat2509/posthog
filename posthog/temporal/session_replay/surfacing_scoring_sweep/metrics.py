@@ -5,7 +5,7 @@ from django.conf import settings
 from temporalio import activity
 from temporalio.worker import ActivityInboundInterceptor, ExecuteActivityInput, Interceptor
 
-from posthog.temporal.llm_analytics.metrics import ExecutionTimeRecorder, get_metric_meter
+from posthog.temporal.ai_observability.metrics import ExecutionTimeRecorder, get_metric_meter
 
 SCORE_CHUNK_ACTIVITY_TYPE = "score_chunk_activity"
 
