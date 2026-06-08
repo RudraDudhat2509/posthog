@@ -43,7 +43,7 @@ export const s3Definition: DestinationDefinition = {
         },
     },
     eventTableOverrides: { includeGenericPersonFields: false },
-    Fields: function S3Fields({ isNew, formValues, configurationChanged }) {
+    Fields: function S3Fields({ isNew, formValues }) {
         return (
             <>
                 <div className="flex gap-4">
@@ -79,11 +79,7 @@ export const s3Definition: DestinationDefinition = {
                 </div>
 
                 <div className="flex gap-4">
-                    <CompressionField
-                        fileFormat={formValues.file_format}
-                        isNew={isNew}
-                        configurationChanged={configurationChanged}
-                    />
+                    <CompressionField fileFormat={formValues.file_format} />
 
                     <LemonField name="encryption" label="Encryption" className="flex-1">
                         <LemonSelect
