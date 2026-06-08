@@ -490,11 +490,17 @@ fn apply_person_cohort_to_state(
     // sentinel prefix to avoid colliding with user-set properties of the same name (e.g.
     // a customer setting `properties.created_at` for their own analytics). The matcher
     // applies the prefix when `filter.prop_type == PersonMetadata` — see `match_property`.
+    // The field list lives in `PERSON_METADATA_FIELDS`; the match arm maps each field to the
+    // persons-table column to read, so adding a field is a compile-time signal here.
     if let Some(ref person) = result.person {
-        all_person_properties.insert(
-            crate::properties::property_matching::person_metadata_key("created_at"),
-            Value::String(person.created_at.to_rfc3339()),
-        );
+        for field in crate::properties::property_matching::PERSON_METADATA_FIELDS {
+            let value = match *field {
+                "created_at" => Value::String(person.created_at.to_rfc3339()),
+                _ => continue,
+            };
+            all_person_properties
+                .insert(crate::properties::property_matching::person_metadata_key(field), value);
+        }
     }
 
     state.set_person_properties(all_person_properties);
@@ -598,10 +604,14 @@ fn are_overrides_useful_for_flag(
         return false;
     }
 
-    // Check if overrides contain at least one property the flag needs
-    property_filters
-        .iter()
-        .any(|filter| overrides.contains_key(&filter.key))
+    // Check if overrides contain at least one property the flag needs.
+    // Use `lookup_key_for` so PersonMetadata filters match on the sentinel-prefixed key rather
+    // than the raw key — see the note on `requires_db_property`.
+    property_filters.iter().any(|filter| {
+        overrides.contains_key(
+            crate::properties::property_matching::lookup_key_for(filter).as_ref(),
+        )
+    })
 }
 
 /// Determines if a FlagError should trigger a retry
