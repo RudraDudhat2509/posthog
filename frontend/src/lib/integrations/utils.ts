@@ -23,6 +23,7 @@ import IconLinkedIn from 'public/services/linkedin.png'
 import IconMailjet from 'public/services/mailjet.png'
 import IconMetaAds from 'public/services/meta-ads.png'
 import IconPinterest from 'public/services/pinterest_ads.png'
+import IconPostgres from 'public/services/postgres.png'
 import IconReddit from 'public/services/reddit.png'
 import IconSalesforce from 'public/services/salesforce.png'
 import IconSlack from 'public/services/slack.png'
@@ -65,6 +66,7 @@ export const ICONS: Record<IntegrationKind, any> = {
     'customerio-app': IconCustomerIO,
     'customerio-webhook': IconCustomerIO,
     'customerio-track': IconCustomerIO,
+    postgresql: IconPostgres,
 }
 
 export const getIntegrationNameFromKind = (kind: string): string => {
@@ -97,6 +99,8 @@ export const getIntegrationNameFromKind = (kind: string): string => {
             return 'GitHub'
         case 'firebase':
             return 'Firebase'
+        case 'postgresql':
+            return 'PostgreSQL'
         default:
             return capitalizeFirstLetter(kind)
     }
