@@ -11,9 +11,10 @@ import { resolveResourceHandler } from '@/tools/agentPlatform/resolveResource'
 import { getToolDefinitions } from '@/tools/toolDefinitions'
 import type { Context } from '@/tools/types'
 
-// Canonical source: docs/agent-platform/playbooks/. The build copies these into
-// shared/playbooks/ (embedded) — both must stay in lockstep with PLAYBOOK_IDS.
-const DOCS_PLAYBOOKS_DIR = resolve(__dirname, '../../../../docs/agent-platform/playbooks')
+// Canonical source: the agent concierge bundle's skills dir. The build copies
+// these into shared/playbooks/ (embedded) — both must stay in lockstep with
+// PLAYBOOK_IDS.
+const DOCS_PLAYBOOKS_DIR = resolve(__dirname, '../../../agent-tests/src/examples/agent-concierge/skills')
 
 // Context whose api key carries the given scopes (drives the live tool surface).
 const ctxWithScopes = (scopes: string[]): Context =>

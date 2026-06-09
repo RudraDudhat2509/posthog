@@ -53,17 +53,37 @@ file (and out of this list) once the design lands.
       product needing the same "PostHog Cloud reaches into customer's
       private network" plumbing.
 
-- [ ] **Cron trigger scheduler** (Dylan — picking up after runtime-mcps
-      PR 7) — see
-      [`cron-trigger-scheduler.md`](cron-trigger-scheduler.md).
-      Janitor runs `cronTick()` alongside its sweep; catch-up modes
-      (`all` / `most_recent` / `skip`) bound the outage-recovery blast
-      radius; `agent_cron_firing` table dedups across replicas; firings
-      coalesce into long-running sessions via `external_key_reuse`.
-      Plan was checked off prematurely — the most recent commit on the
-      plan file is `078ce5bb89 wip — cron plan, auth refresh, hogli
-      ai-gateway slot`; no `cronTick` or `agent_cron_firing` exist in
-      the codebase yet.
+- [ ] **Stop chat-triggered sessions when no listeners remain.** Chat
+      sessions today happily keep generating turns even after every SSE
+      consumer has hung up — the runner has no signal that the user
+      walked away, so it spends model tokens producing assistant text
+      and tool calls nobody will see. Proposal: the bus tracks listener
+      counts per session (Redis pubsub already exposes this); the
+      runner subscribes and, if the count stays at zero for N seconds
+      AND the active trigger declares it cares (e.g. `chat`,
+      `slack:dm`), wraps the current turn cleanly and parks the session
+      until a listener returns. Default behaviour controlled by a new
+      `triggers[].config.idle_stop_ms` (or platform-wide default) — opt
+      out by setting it to `0`. Open questions: webhook / cron / mcp
+      triggers should default to never-stop (no human listener concept);
+      "listener returned" needs to either auto-resume or surface a
+      one-click resume; how to handle in-flight tool calls (let them
+      finish, drop, or queue). Tracked because it's primarily a cost
+      lever — wasted tokens add up fast on long-running chat agents
+      with idle UIs.
+
+- [x] ~~**Cron trigger scheduler**~~ — ✅ shipped; see
+      [`cron-trigger-scheduler.md`](shipped/cron-trigger-scheduler.md).
+      Janitor runs `cronTick()`
+      ([`cron-tick.ts`](../../../services/agent-janitor/src/cron-tick.ts))
+      alongside its sweep; catch-up modes (`all` / `most_recent` /
+      `skip`) bound the outage-recovery blast radius; firings coalesce
+      into long-running sessions via `external_key`. Dedup is via the
+      session `idempotency_key` partial unique index
+      ([`1780346228100_agent_session_idempotency_key.sql`](../../../services/agent-migrations/migrations/1780346228100_agent_session_idempotency_key.sql))
+      — the `agent_cron_firing` table the earlier draft imagined was
+      never needed. e2e coverage in
+      [`cron-trigger.test.ts`](../../../services/agent-tests/src/cases/cron-trigger.test.ts).
 
 - [x] ~~**Streaming deltas + unified reasoning knob**~~ — see
       [`streaming-and-reasoning.md`](streaming-and-reasoning.md).
@@ -230,15 +250,33 @@ message, session_id? })` tool, sessions exposed as MCP
       refuses non-live invokes without it. Draft's own
       `spec.auth.mode` is unchanged — this is a layer above it.
 
-- [ ] **Bundle manifest schema** — see
-      [`bundle-manifest-schema.md`](bundle-manifest-schema.md).
-      Spec-derived allowlist for what counts as a valid bundle file;
-      reject everything else at write time with a structured 422.
-      Coupled work: drop `tests/*.json` from the runtime bundle, a
-      one-off `scrub_bundle_paths` command to clean live offenders
-      before the hard fail lands, console file-explorer mirror.
-      Validation primitive belongs in
-      `services/agent-shared/src/spec/` next to `AgentSpecSchema`.
+- [x] ~~**Bundle manifest schema**~~ — **superseded** by
+      [`typed-bundle-authoring-api.md`](shipped/typed-bundle-authoring-api.md)
+      (now shipped). Original idea (spec-derived path allowlist on a
+      generic file API) is moot now the file API has gone away — see
+      [`bundle-manifest-schema.md`](bundle-manifest-schema.md) for the
+      archived design.
+
+- [x] ~~**Typed bundle authoring API + full janitor e2e suite**~~ — ✅
+      shipped; see
+      [`typed-bundle-authoring-api.md`](shipped/typed-bundle-authoring-api.md).
+      Replace the generic `/file?path=X` bundle store with typed
+      resource endpoints (`/agent_md`, `/skills/:id`, `/tools/:id`,
+      `/bundle` for GET+PUT). `spec.skills[]` / `spec.tools[]`
+      become server-derived at freeze — orphans and spec/bundle drift
+      become structurally impossible. Tool upload runs a static-AST
+      shape check (TypeScript compiler API, no `vm.runInContext`) +
+      esbuild compile in one pass; failures return 422 at upload, not
+      at session-start. Django collapses to a thin proxy; the janitor
+      HTTP contract is the source of truth, pinned by a comprehensive
+      e2e suite at `services/agent-tests/src/cases/typed-bundle-authoring.test.ts`
+      (round-trip, per-resource semantics, delete, full-replace,
+      shape pipeline, spec derivation, lifecycle, migrator, proxy
+      auth). Ships with a one-shot migrator that reshapes every
+      existing revision; old `/file` endpoints return 410 Gone.
+      Coupled: concierge `authoring-new-agents` skill rewrite, web
+      app file-tree → typed editor, optional `validate_custom_tool`
+      client tool for browser-side AST checking.
 
 - [x] ~~**Persistent agent memory**~~ (Danilo for the Mnemion slice +
       v1) — see [`agent-memory.md`](agent-memory.md). Cross-session

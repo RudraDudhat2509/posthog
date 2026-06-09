@@ -1,14 +1,17 @@
-// Operator playbook ids — the canonical list, kept in lockstep with the markdown
-// in docs/agent-platform/playbooks/ (a vitest drift guard asserts they match).
-// Pure constants only (no `.md` imports) so this module is safe to load from the
-// tsx schema-generation script via src/schema/tool-inputs.ts.
+// Operator playbook ids — the canonical list, kept in lockstep with the skill
+// markdown in the agent concierge bundle
+// (services/agent-tests/src/examples/agent-concierge/skills/); a vitest drift
+// guard asserts they match. Pure constants only (no `.md` imports) so this module
+// is safe to load from the tsx schema-generation script via src/schema/tool-inputs.ts.
 export const PLAYBOOK_IDS = [
     'platform-mental-model',
     'reading-an-agent',
     'debugging-sessions',
     'editing-agents-safely',
     'authoring-new-agents',
+    'choosing-the-model',
     'secrets-and-integrations',
+    'setting-up-slack-app',
     'designing-mcp-surfaces',
     'running-and-evaluating-tests',
     'using-the-console-ui',
@@ -45,7 +48,9 @@ export const PLAYBOOK_TITLES: Record<PlaybookId, string> = {
     'debugging-sessions': 'Debugging sessions — triage failures and read logs',
     'editing-agents-safely': 'Editing agents safely — branch, validate, freeze, promote',
     'authoring-new-agents': 'Authoring new agents from scratch',
+    'choosing-the-model': 'Choosing the model for an agent',
     'secrets-and-integrations': 'Secrets and integrations — wiring credentials safely',
+    'setting-up-slack-app': 'Setting up the Slack app for a Slack-triggered agent',
     'designing-mcp-surfaces': "Designing an agent's MCP tool surface",
     'running-and-evaluating-tests': 'Running and evaluating agent tests',
     'using-the-console-ui': 'Using the agent console UI',

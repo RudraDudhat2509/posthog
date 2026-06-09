@@ -18,8 +18,8 @@
  */
 
 import { S3Client } from '@aws-sdk/client-s3'
+import { createServer } from 'node:http'
 
-import { migrate } from '@posthog/agent-migrations'
 import {
     AnalyticsSink,
     analyticsDistinctId,
@@ -27,6 +27,7 @@ import {
     createAgentPool,
     createLogger,
     DirectHttpClient,
+    EncryptedEnvSlackSecretResolver,
     EncryptedFields,
     HttpClient,
     HttpGatewayClient,
@@ -50,6 +51,8 @@ import {
     S3MemoryStore,
     SecretBroker,
     selectSandboxPool,
+    SlackFailureNotifier,
+    TriggerAwareFailureNotifier,
 } from '@posthog/agent-shared'
 
 import { defaultApiKeyFromConfig, loadAgentRunnerConfig } from './config'
@@ -116,12 +119,13 @@ async function main(): Promise<void> {
 
     const posthogDb = createAgentPool(config.posthogDbUrl)
     const agentDb = createAgentPool(config.agentDbUrl)
-    // Belt-and-braces in dev; prod also runs `bin/migrate --scope=agent_runtime`
-    // as a one-shot job before the service starts. Idempotent.
-    await migrate({ databaseUrl: config.agentDbUrl })
+    // Schema is owned by `agent-migrator`; the chart runs a one-shot Job
+    // (`charts/agent-migrator/`) on every sync. Runtime no longer calls
+    // migrate() — runtime roles don't have DDL anyway, and racing N pods
+    // to migrate was the source of today's pgmigrations CrashLoopBackOff.
 
     const defaultApiKey = defaultApiKeyFromConfig(config)
-    const revisions = new PgRevisionStore(posthogDb)
+    const revisions = new PgRevisionStore(agentDb)
 
     // Encryption is required at boot now — constructor throws on empty
     // keys. Dev gets a deterministic default via `isDev()` in platform
@@ -260,6 +264,25 @@ async function main(): Promise<void> {
     // requires_approval flags on tools are silently ungated.
     const approvals = new PgApprovalStore(agentDb)
 
+    // Out-of-band notifier for terminal failures. Slack-triggered sessions
+    // get a sanitized thread reply when they crash before the agent can
+    // post one itself; every other trigger type falls through to a no-op.
+    // Uses the same encrypted_env resolver ingress uses for the signing
+    // secret, so the bot token decrypts the same way at request time.
+    const slackSecretResolver = new EncryptedEnvSlackSecretResolver(encryption)
+    const slackFailureNotifier = new SlackFailureNotifier({
+        http,
+        resolver: slackSecretResolver,
+        logger: {
+            warn: (meta, msg) => log.warn(meta, msg),
+            info: (meta, msg) => log.info(meta, msg),
+        },
+    })
+    const failureNotifier = new TriggerAwareFailureNotifier(
+        { slack: slackFailureNotifier },
+        { warn: (meta, msg) => log.warn(meta, msg) }
+    )
+
     const worker = new Worker({
         queue: new PgSessionQueue(agentDb),
         revisions,
@@ -311,6 +334,7 @@ async function main(): Promise<void> {
         useGatewayCost: config.useAiGateway,
         analytics,
         maxConcurrency: config.maxConcurrency,
+        maxOutputTokens: config.maxOutputTokens,
         memoryStore,
         tabularStore,
         isAskerInApproverScope,
@@ -322,10 +346,28 @@ async function main(): Promise<void> {
         integrationHostValidator: makeIntegrationHostValidator(),
         http,
         posthogApiBaseUrl: config.posthogApiBaseUrl,
+        failureNotifier,
     })
+
+    // Minimal liveness surface. The worker is queue-driven and has no request
+    // path, so GET /healthz is the only thing on a port — 200 while running,
+    // 503 once draining so k8s pulls a shutting-down pod out promptly.
+    let healthy = true
+    const healthServer = createServer((req, res) => {
+        if (req.url === '/healthz') {
+            res.writeHead(healthy ? 200 : 503, { 'content-type': 'application/json' })
+            res.end(JSON.stringify({ ok: healthy }))
+            return
+        }
+        res.writeHead(404)
+        res.end()
+    })
+    healthServer.listen(config.healthPort, () => log.info({ port: config.healthPort }, 'health server listening'))
 
     const shutdown = (sig: string): void => {
         log.info({ sig }, 'shutdown signal received — suspending in-flight sessions')
+        healthy = false
+        healthServer.close()
         void worker.stop()
     }
     process.on('SIGTERM', () => shutdown('SIGTERM'))

@@ -31,6 +31,20 @@ const DEV_S3_SECRET_ACCESS_KEY = 'any'
 
 export const AgentRunnerConfigSchema = PlatformConfigSchema.extend({
     maxConcurrency: z.coerce.number().int().positive().default(8).describe('In-flight sessions per worker process.'),
+    healthPort: z.coerce
+        .number()
+        .int()
+        .positive()
+        .default(8083)
+        .describe(
+            'Port for the minimal GET /healthz liveness server. The worker has no request path; this is its only listener. Local dev overrides to 3032 (see bin/mprocs.yaml); deployed sets it explicitly in the chart.'
+        ),
+    maxOutputTokens: z.coerce
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe('Operator override capping per-turn max_tokens below the model ceiling. Unset → model ceiling.'),
     useAiGateway: z
         .union([z.literal('1'), z.literal('0'), z.literal('true'), z.literal('false')])
         .default('0')
@@ -159,8 +173,9 @@ export const AgentRunnerConfigSchema = PlatformConfigSchema.extend({
     sandboxHostImage: z
         .string()
         .optional()
+        .transform((v): string | undefined => v ?? (isDev() ? 'posthog/agent-sandbox-host:dev' : undefined))
         .describe(
-            'Canonical `posthog-agent-sandbox-host` image reference (pinned by SHA in prod). Applies to both backends unless an `AGENT_SANDBOX_{DOCKER,MODAL}_IMAGE` override is set.'
+            'Canonical `posthog-agent-sandbox-host` image reference (pinned by SHA in prod). Applies to both backends unless an `AGENT_SANDBOX_{DOCKER,MODAL}_IMAGE` override is set. Defaults to the locally-built `posthog/agent-sandbox-host:dev` tag under `isDev()` (matches `services/agent-sandbox-host/README.md` build instructions) so `bin/start` works without configuration; prod must set this explicitly.'
         ),
     sandboxDockerImage: z
         .string()
@@ -187,6 +202,8 @@ export type AgentRunnerConfig = z.infer<typeof AgentRunnerConfigSchema>
 
 const ENV_KEY_MAP = extendEnvKeyMap<AgentRunnerConfig>(PLATFORM_ENV_KEY_MAP, {
     AGENT_MAX_CONCURRENCY: 'maxConcurrency',
+    AGENT_RUNNER_HEALTH_PORT: 'healthPort',
+    AGENT_MAX_OUTPUT_TOKENS: 'maxOutputTokens',
     AGENT_USE_AI_GATEWAY: 'useAiGateway',
     POSTHOG_AI_GATEWAY_URL: 'aiGatewayUrl',
     POSTHOG_AI_GATEWAY_KEY: 'posthogAiGatewayKey',

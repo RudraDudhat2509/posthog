@@ -247,7 +247,7 @@
         }
     },
     "agent-applications-create": {
-        "description": "Create a new agent. Requires `name` + `slug` (unique within the team). The fresh application has no revisions; create a draft via `agent-applications-revisions-create`, populate its bundle, then freeze + promote. Playbook: read the `authoring-new-agents` playbook via `agent-resolve-resource` for the end-to-end authoring flow.",
+        "description": "Create a new agent. Requires `name` + `slug` (unique within the team). The fresh application has no revisions; create a draft via `agent-applications-revisions-create`, populate its bundle, then freeze + promote.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Create an agent application",
@@ -275,7 +275,7 @@
         }
     },
     "agent-applications-env-keys-clear": {
-        "description": "Remove one key from the encrypted env. No-op when the key wasn't set. Use this when a secret is no longer required by the spec or after a credential is known to be compromised. Does NOT trigger session restarts — in-flight sessions keep the value they resolved at start. Playbook: read the `secrets-and-integrations` playbook via `agent-resolve-resource` for the credential punch-out flow.",
+        "description": "Remove one key from the encrypted env. No-op when the key wasn't set. Use this when a secret is no longer required by the spec or after a credential is known to be compromised. Does NOT trigger session restarts — in-flight sessions keep the value they resolved at start.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Clear one secret",
@@ -289,7 +289,7 @@
         }
     },
     "agent-applications-env-keys-get": {
-        "description": "Returns `{ key, is_set }` for one name. The value is never returned. Use as a pre-check before asking the user to set or rotate a key, and again after the user completes the punch-out flow to confirm the write landed. Playbook: read the `secrets-and-integrations` playbook via `agent-resolve-resource` for the credential punch-out flow.",
+        "description": "Returns `{ key, is_set }` for one name. The value is never returned. Use as a pre-check before asking the user to set or rotate a key, and again after the user completes the punch-out flow to confirm the write landed.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Check whether one secret is set",
@@ -303,7 +303,7 @@
         }
     },
     "agent-applications-env-keys-list": {
-        "description": "Returns `{ keys: [name, ...] }` — names only, never values. Use to know which declared secrets are already populated so you don't ask the user to set something that's already set. Pair with `agent-applications-revisions-retrieve` (`spec.secrets[]`) to spot which declared keys are still unset. Playbook: read the `secrets-and-integrations` playbook via `agent-resolve-resource` for the credential punch-out flow.",
+        "description": "Returns `{ keys: [name, ...] }` — names only, never values. Use to know which declared secrets are already populated so you don't ask the user to set something that's already set. Pair with `agent-applications-revisions-retrieve` (`spec.secrets[]`) to spot which declared keys are still unset.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "List the names of secrets currently set",
@@ -317,7 +317,7 @@
         }
     },
     "agent-applications-list": {
-        "description": "List every agent application in the project. Returns id, slug, name, description, live_revision, archived state. Use the slug to drive subsequent calls — it's stable and human-readable. Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.",
+        "description": "List every agent application in the project. Returns id, slug, name, description, live_revision, archived state. Use the slug to drive subsequent calls — it's stable and human-readable.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "List agent applications",
@@ -359,7 +359,7 @@
         }
     },
     "agent-applications-retrieve": {
-        "description": "Fetch one application by id or slug (both unique within the team). Returns metadata only — to inspect the running spec or bundle, look up the live revision via `agent-applications-revisions-list` then call `agent-applications-revisions-retrieve` and `agent-applications-revisions-manifest-retrieve`. Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.",
+        "description": "Fetch one application by id or slug (both unique within the team). Returns metadata only — to inspect the running spec or bundle, look up the live revision via `agent-applications-revisions-list` then call `agent-applications-revisions-retrieve` and `agent-applications-revisions-manifest-retrieve`.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Get an agent application",
@@ -372,8 +372,22 @@
             "readOnlyHint": true
         }
     },
+    "agent-applications-revisions-agent-md-update": {
+        "description": "Body `{ content: \"…\" }`. Overwrites the agent's system prompt. Use for surgical edits to the prompt; leaves skills, tools, and spec untouched. Draft-only.",
+        "category": "Agent stack",
+        "feature": "agent_platform",
+        "summary": "Replace agent.md",
+        "title": "Replace agent.md",
+        "required_scopes": ["agents:write"],
+        "annotations": {
+            "destructiveHint": true,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": false
+        }
+    },
     "agent-applications-revisions-archive-create": {
-        "description": "Mark a revision archived. If it was the live revision, clears the parent application's `live_revision` (the app has no deployable version until another revision is promoted). Idempotent. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.",
+        "description": "Mark a revision archived. If it was the live revision, clears the parent application's `live_revision` (the app has no deployable version until another revision is promoted). Idempotent.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Archive a revision",
@@ -387,11 +401,11 @@
         }
     },
     "agent-applications-revisions-bundle-retrieve": {
-        "description": "Bulk download — returns `{ files: { path: utf-8 content, … } }` for every file in the bundle. Use when you want to edit the whole agent locally; mutate files, then push back via the bundle PUT (replace mode). Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.",
+        "description": "Returns `{ agent_md, skills, tools, spec }` — the typed view of the revision. Use this when you want to edit the whole agent locally (pull, mutate in-memory, push back via the bundle PUT). Skills carry `description`, `body`, and optional `files[]`. Tools carry `description`, `args_schema`, `source` (TypeScript). `spec` is the author-facing slice (skills/tools are server-derived at freeze).",
         "category": "Agent stack",
         "feature": "agent_platform",
-        "summary": "Pull every file in a revision's bundle",
-        "title": "Pull every file in a revision's bundle",
+        "summary": "Get the typed bundle",
+        "title": "Get the typed bundle",
         "required_scopes": ["agents:read"],
         "annotations": {
             "destructiveHint": false,
@@ -401,11 +415,11 @@
         }
     },
     "agent-applications-revisions-bundle-update": {
-        "description": "Body `{ files: { path: content, … }, mode: \"replace\" | \"merge\" }`. `replace` wipes the existing bundle before writing the new set (use after a full edit); `merge` upserts (use for incremental adds). Only `state=draft` revisions accept this. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.",
+        "description": "Body shape matches the GET response: `{ agent_md, skills, tools, spec }`. **Full replace** — anything not in the payload is deleted. For incremental edits use the single-resource PUTs (`agent-applications-revisions-skills-update`, etc.). Each tool source is AST-checked + esbuild-compiled synchronously; a bad shape returns 422 before any S3 writes. Only `state=draft` revisions accept this.",
         "category": "Agent stack",
         "feature": "agent_platform",
-        "summary": "Push a full bundle to a draft revision",
-        "title": "Push a full bundle to a draft revision",
+        "summary": "Full-replace the typed bundle",
+        "title": "Full-replace the typed bundle",
         "required_scopes": ["agents:write"],
         "annotations": {
             "destructiveHint": true,
@@ -415,7 +429,7 @@
         }
     },
     "agent-applications-revisions-clone-from-create": {
-        "description": "Copy every file in `source_revision_id`'s bundle into this (draft) revision. Use after `agent-applications-revisions-create` if you didn't go through `new-draft` for some reason. Both revisions must belong to the same team. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.",
+        "description": "Copy every file in `source_revision_id`'s bundle into this (draft) revision. Use after `agent-applications-revisions-create` if you didn't go through `new-draft` for some reason. Both revisions must belong to the same team.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Clone bundle from another revision",
@@ -429,7 +443,7 @@
         }
     },
     "agent-applications-revisions-create": {
-        "description": "Create a new revision in state `draft`. Body shape mirrors the AgentRevision serializer — the only fields you typically set are `spec` (initial JSON) and `parent_revision` (optional, lets the diff UI show what you're changing). The bundle starts empty; use `agent-applications-revisions-clone-from-create` or `agent-applications-revisions-new-draft-create` to seed it from an existing revision. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.",
+        "description": "Create a new revision in state `draft`. Body shape mirrors the AgentRevision serializer — the only fields you typically set are `spec` (initial JSON) and `parent_revision` (optional, lets the diff UI show what you're changing). The bundle starts empty; use `agent-applications-revisions-clone-from-create` or `agent-applications-revisions-new-draft-create` to seed it from an existing revision.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Create a draft revision",
@@ -443,7 +457,7 @@
         }
     },
     "agent-applications-revisions-cron-fire-create": {
-        "description": "Fire a single cron job out-of-band, bypassing the scheduler's window logic. Use this to iterate on a cron agent's `prompt` (or to debug `external_key` placeholder expansion) without waiting for the next real firing. Required: `cron_name` (matches `spec.triggers[].config.name` on a `type: cron` trigger). Optional: `request_id` — pass a stable id per logical click so repeat fires resolve to the same session instead of stacking duplicates. Returns `{ ok, session_id, fired_at, idempotency_key }`; track the session via `agent-applications-sessions-retrieve` to read the conversation. Authoring-loop completion piece — without this, \"did my prompt do the right thing?\" is unanswerable until the cron actually fires. Playbook: read the `debugging-sessions` playbook via `agent-resolve-resource` for the failure taxonomy and how to read the logs.",
+        "description": "Fire a single cron job out-of-band, bypassing the scheduler's window logic. Use this to iterate on a cron agent's `prompt` (or to debug `external_key` placeholder expansion) without waiting for the next real firing. Required: `cron_name` (matches `spec.triggers[].config.name` on a `type: cron` trigger). Optional: `request_id` — pass a stable id per logical click so repeat fires resolve to the same session instead of stacking duplicates. Returns `{ ok, session_id, fired_at, idempotency_key }`; track the session via `agent-applications-sessions-retrieve` to read the conversation. Authoring-loop completion piece — without this, \"did my prompt do the right thing?\" is unanswerable until the cron actually fires.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Manually fire one cron job",
@@ -456,50 +470,8 @@
             "readOnlyHint": false
         }
     },
-    "agent-applications-revisions-file-destroy": {
-        "description": "Remove the file at `?path=…` from a draft revision. Idempotent — deleting an already-absent file is a no-op. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Delete one file",
-        "title": "Delete one file",
-        "required_scopes": ["agents:write"],
-        "annotations": {
-            "destructiveHint": true,
-            "idempotentHint": true,
-            "openWorldHint": true,
-            "readOnlyHint": false
-        }
-    },
-    "agent-applications-revisions-file-retrieve": {
-        "description": "Returns `{ path, content }` for one file in the bundle. Pass `?path=…` (e.g. `?path=skills/research.md`). Works on any revision state. Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Read one file",
-        "title": "Read one file",
-        "required_scopes": ["agents:read"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": true,
-            "openWorldHint": true,
-            "readOnlyHint": true
-        }
-    },
-    "agent-applications-revisions-file-update": {
-        "description": "Body `{ content: \"…\" }`. Creates or overwrites the file at `?path=…` in a draft revision. Use for targeted edits (one skill, one tool source); for bulk changes use the bundle PUT. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Write one file",
-        "title": "Write one file",
-        "required_scopes": ["agents:write"],
-        "annotations": {
-            "destructiveHint": true,
-            "idempotentHint": true,
-            "openWorldHint": true,
-            "readOnlyHint": false
-        }
-    },
     "agent-applications-revisions-freeze-create": {
-        "description": "Walks the bundle, computes a manifest sha256, stamps it on the row, flips state `draft → ready`. After this the bundle is immutable. Idempotent — freezing a `ready` revision is a no-op that returns the existing sha256. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.",
+        "description": "Walks the bundle, computes a manifest sha256, stamps it on the row, flips state `draft → ready`. After this the bundle is immutable. Idempotent — freezing a `ready` revision is a no-op that returns the existing sha256.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Freeze a draft revision",
@@ -513,7 +485,7 @@
         }
     },
     "agent-applications-revisions-list": {
-        "description": "List every revision (draft, ready, live, archived) for one application, newest first. Use to find the current live revision id or pick a known-good revision to clone for an edit. Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.",
+        "description": "List every revision (draft, ready, live, archived) for one application, newest first. Use to find the current live revision id or pick a known-good revision to clone for an edit.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "List revisions of an application",
@@ -527,7 +499,7 @@
         }
     },
     "agent-applications-revisions-manifest-retrieve": {
-        "description": "Returns `{ revision_id, state, bundle_sha256, files: [{ path, size, sha256 }, …] }`. Use to discover what's in a bundle without pulling all the bytes — sha256 lets you spot which files have changed since you last looked. Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.",
+        "description": "Returns `{ revision_id, state, bundle_sha256, files: [{ path, size, sha256 }, …] }`. Use to discover what's in a bundle without pulling all the bytes — sha256 lets you spot which files have changed since you last looked.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "List files in a revision's bundle",
@@ -541,7 +513,7 @@
         }
     },
     "agent-applications-revisions-new-draft-create": {
-        "description": "One-shot helper: creates a draft revision under `application_id` and clones every file from `source_revision_id` into the new bundle in a single round-trip. Use this for the common \"edit live\" workflow — branch from the current live revision, mutate files, freeze, promote. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.",
+        "description": "One-shot helper: creates a draft revision under `application_id` and clones every file from `source_revision_id` into the new bundle in a single round-trip. Use this for the common \"edit live\" workflow — branch from the current live revision, mutate files, freeze, promote.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Branch a new draft from an existing revision",
@@ -555,7 +527,7 @@
         }
     },
     "agent-applications-revisions-partial-update": {
-        "description": "Replace `spec` on a draft revision. Only `state=draft` revisions accept spec edits — promote bumps the revision to `ready` which freezes the spec. Validation against the AgentSpec zod schema runs on the runner side; an invalid spec will surface when the next session starts, not here. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.",
+        "description": "Replace `spec` on a draft revision. Only `state=draft` revisions accept spec edits — promote bumps the revision to `ready` which freezes the spec. Validation against the AgentSpec zod schema runs on the runner side; an invalid spec will surface when the next session starts, not here.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Update a revision's spec",
@@ -569,7 +541,7 @@
         }
     },
     "agent-applications-revisions-promote-create": {
-        "description": "Flips a `ready` revision to `live` and sets the parent application's `live_revision`. The previously live revision is archived automatically. Requires `state=ready` and `bundle_sha256` set (call `freeze` first). Idempotent: promoting an already-live revision is a no-op. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.",
+        "description": "Flips a `ready` revision to `live` and sets the parent application's `live_revision`. The previously live revision is archived automatically. Requires `state=ready` and `bundle_sha256` set (call `freeze` first). Idempotent: promoting an already-live revision is a no-op.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Promote a revision to live",
@@ -583,7 +555,7 @@
         }
     },
     "agent-applications-revisions-retrieve": {
-        "description": "Fetch one revision's metadata: state, spec (the structural JSON), bundle_uri, bundle_sha256, parent revision id, timestamps. For the bundle contents see `agent-applications-revisions-manifest-retrieve` / `agent-applications-revisions-bundle-retrieve`. Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.",
+        "description": "Fetch one revision's metadata: state, spec (the structural JSON), bundle_uri, bundle_sha256, parent revision id, timestamps. For the bundle contents see `agent-applications-revisions-manifest-retrieve` / `agent-applications-revisions-bundle-retrieve`.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Get a revision",
@@ -596,8 +568,64 @@
             "readOnlyHint": true
         }
     },
+    "agent-applications-revisions-skills-destroy": {
+        "description": "Removes the skill body + every companion file under `skills/<id>/files/`. Returns 404 if the skill doesn't exist. Draft-only.",
+        "category": "Agent stack",
+        "feature": "agent_platform",
+        "summary": "Delete one skill",
+        "title": "Delete one skill",
+        "required_scopes": ["agents:write"],
+        "annotations": {
+            "destructiveHint": true,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": false
+        }
+    },
+    "agent-applications-revisions-skills-update": {
+        "description": "Body `{ description, body, files? }`. Creates the skill if it doesn't exist, replaces it if it does. `files[]` is the optional list of companion docs (path relative to `skills/<id>/files/`). Skill id comes from the URL. Draft-only.",
+        "category": "Agent stack",
+        "feature": "agent_platform",
+        "summary": "Upsert one skill",
+        "title": "Upsert one skill",
+        "required_scopes": ["agents:write"],
+        "annotations": {
+            "destructiveHint": true,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": false
+        }
+    },
+    "agent-applications-revisions-slack-manifest": {
+        "description": "Returns `{ revision_id, manifest, notes, events_url, interactivity_url }` for a revision that has a slack trigger. `manifest` is a ready-to-paste Slack app manifest (JSON) for https://api.slack.com/apps?new_app=1 → \"From an app manifest\" — its OAuth scopes and bot event subscriptions are derived from the agent's slack trigger config (mention_only / auto_resume_threads / ack_reaction) and its Slack tools, so it subscribes to exactly the events the config needs. Hand the user the manifest plus the create-from-manifest link; surface `notes` (e.g. invite the bot to its channels). 400 if the revision has no slack trigger.",
+        "category": "Agent stack",
+        "feature": "agent_platform",
+        "summary": "Generate the Slack app manifest for a revision",
+        "title": "Generate the Slack app manifest for a revision",
+        "required_scopes": ["agents:read"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": true
+        }
+    },
+    "agent-applications-revisions-spec-update": {
+        "description": "Body `{ spec: { … } }`. Replaces the author-writable spec slice (model, triggers, mcps, integrations, secrets, limits, auth, entrypoint, reasoning). `skills[]` and `tools[]` are NOT author-writable — they're derived at freeze from the typed resources. Draft-only.",
+        "category": "Agent stack",
+        "feature": "agent_platform",
+        "summary": "Replace the author-facing spec",
+        "title": "Replace the author-facing spec",
+        "required_scopes": ["agents:write"],
+        "annotations": {
+            "destructiveHint": true,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": false
+        }
+    },
     "agent-applications-revisions-system-prompt": {
-        "description": "Returns the fully-assembled system prompt the runner would pass to the model at session start — framework preamble + agent.md (or `spec.entrypoint`) + skills index. Use to verify what the model actually sees before promoting; particularly useful for confirming `spec.framework_prompt.omit` opt-outs took effect or for debugging author-vs-framework precedence. Response also includes `framework_prompt_version` so you can tell whether a pin (`spec.framework_prompt.version_pin`) is in effect. Works on any revision state. Playbook: read the `reading-an-agent` playbook via `agent-resolve-resource` for how to inspect and summarize an agent.",
+        "description": "Returns the fully-assembled system prompt the runner would pass to the model at session start — framework preamble + agent.md (or `spec.entrypoint`) + skills index. Use to verify what the model actually sees before promoting; particularly useful for confirming `spec.framework_prompt.omit` opt-outs took effect or for debugging author-vs-framework precedence. Response also includes `framework_prompt_version` so you can tell whether a pin (`spec.framework_prompt.version_pin`) is in effect. Works on any revision state.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Preview the assembled system prompt for a revision",
@@ -610,8 +638,36 @@
             "readOnlyHint": true
         }
     },
+    "agent-applications-revisions-tools-destroy": {
+        "description": "Removes source.ts, compiled.js, schema.json from the bundle. Returns 404 if the tool doesn't exist. Draft-only.",
+        "category": "Agent stack",
+        "feature": "agent_platform",
+        "summary": "Delete one custom tool",
+        "title": "Delete one custom tool",
+        "required_scopes": ["agents:write"],
+        "annotations": {
+            "destructiveHint": true,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": false
+        }
+    },
+    "agent-applications-revisions-tools-update": {
+        "description": "Body `{ description, args_schema, source }`. `source` is the TypeScript tool source — the janitor runs an AST shape check + esbuild compile synchronously and rejects a bad shape with structured diagnostics in the 422 response. Required shape: `export default { actions: { default: async (args, ctx) => { ... } } }`. Do NOT include `compiled.js` — it's generated. Tool id comes from the URL. Draft-only.",
+        "category": "Agent stack",
+        "feature": "agent_platform",
+        "summary": "Upsert one custom tool",
+        "title": "Upsert one custom tool",
+        "required_scopes": ["agents:write"],
+        "annotations": {
+            "destructiveHint": true,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": false
+        }
+    },
     "agent-applications-revisions-validate-create": {
-        "description": "Pre-flight checks before deploying. Returns `{ ok, errors: [...] }`. Catches: missing entrypoint file, unknown native tool ids, custom tools missing `compiled.js` / `schema.json`, skill paths that don't exist in the bundle, declared secrets that aren't set in the application env. Works on any revision state — use this on a draft before calling `agent-applications-revisions-freeze-create`. Playbook: read the `editing-agents-safely` playbook via `agent-resolve-resource` for the branch → validate → freeze → promote workflow.",
+        "description": "Pre-flight checks before deploying. Returns `{ ok, errors: [...] }`. Catches: missing entrypoint file, unknown native tool ids, custom tools missing `compiled.js` / `schema.json`, skill paths that don't exist in the bundle, declared secrets that aren't set in the application env. Works on any revision state — use this on a draft before calling `agent-applications-revisions-freeze-create`.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Validate a revision's bundle + spec",
@@ -625,7 +681,7 @@
         }
     },
     "agent-applications-sessions-list": {
-        "description": "Newest-first list of sessions for this agent across all revisions. Each summary carries id, state (queued / running / completed / closed / cancelled / failed), revision_id, principal, turn count, retry count, timestamps, a `preview` of the last assistant text (~120 chars), and `usage_total` (tokens + cost aggregated over the whole conversation). The transcript body is omitted — use `agent-applications-sessions-retrieve` for that. Filters: `state` (comma-separated for multiple, e.g. `completed,failed`), `revision_id` (UUID), `created_after` / `created_before` (ISO datetimes). Paging via `limit` (default 100, capped at 500) + `offset`. Filters AND together. Playbook: read the `debugging-sessions` playbook via `agent-resolve-resource` for the failure taxonomy and how to read the logs.",
+        "description": "Newest-first list of sessions for this agent across all revisions. Each summary carries id, state (queued / running / completed / closed / cancelled / failed), revision_id, principal, turn count, retry count, timestamps, a `preview` of the last assistant text (~120 chars), and `usage_total` (tokens + cost aggregated over the whole conversation). The transcript body is omitted — use `agent-applications-sessions-retrieve` for that. Filters: `state` (comma-separated for multiple, e.g. `completed,failed`), `revision_id` (UUID), `created_after` / `created_before` (ISO datetimes). Paging via `limit` (default 100, capped at 500) + `offset`. Filters AND together.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "List sessions for an agent",
@@ -639,7 +695,7 @@
         }
     },
     "agent-applications-sessions-retrieve": {
-        "description": "Full `AgentSession` row: state, principal, conversation (user / assistant / toolResult messages), pending_inputs, retry_count, timestamps. Always includes a `usage_total` block (tokens + cost) aggregated over the entire session. Pass `last_n=<int>` to trim the response to the most recent N messages — useful for long sessions where you only care about the tail; `conversation_trimmed: true` plus `conversation_total_turns` tells you how much was hidden, and `usage_total` is still computed over the full untrimmed conversation so cost reporting stays accurate. Playbook: read the `debugging-sessions` playbook via `agent-resolve-resource` for the failure taxonomy and how to read the logs.",
+        "description": "Full `AgentSession` row: state, principal, conversation (user / assistant / toolResult messages), pending_inputs, retry_count, timestamps. Always includes a `usage_total` block (tokens + cost) aggregated over the entire session. Pass `last_n=<int>` to trim the response to the most recent N messages — useful for long sessions where you only care about the tail; `conversation_trimmed: true` plus `conversation_total_turns` tells you how much was hidden, and `usage_total` is still computed over the full untrimmed conversation so cost reporting stays accurate.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Get one session",
@@ -653,7 +709,7 @@
         }
     },
     "agent-applications-set-env-create": {
-        "description": "Body `{ env: { KEY: \"value\", … } }`. The whole env is replaced (not patched); pass the full set you want available to the runner. Encrypted at rest with the team's Fernet keys; the worker decrypts at session start and feeds the values to tool sandboxes as opaque nonces (raw secrets never leave Django). Playbook: read the `secrets-and-integrations` playbook via `agent-resolve-resource` for the credential punch-out flow.",
+        "description": "Body `{ env: { KEY: \"value\", … } }`. The whole env is replaced (not patched); pass the full set you want available to the runner. Encrypted at rest with the team's Fernet keys; the worker decrypts at session start and feeds the values to tool sandboxes as opaque nonces (raw secrets never leave Django).",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "Replace the application's env block",
@@ -666,123 +722,11 @@
             "readOnlyHint": false
         }
     },
-    "agent-custom-tool-templates-create": {
-        "description": "Create a new shared custom-tool template. Requires `source` (TypeScript), `compiled_js` (the bundler output), and `args_schema` (TypeBox / JSON Schema for the tool's args). The bundler runs client-side during authoring; the registry just stores the artifact pair. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Create a custom tool template (v1)",
-        "title": "Create a custom tool template (v1)",
-        "required_scopes": ["agents:write"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": false,
-            "openWorldHint": true,
-            "readOnlyHint": false
-        }
-    },
-    "agent-custom-tool-templates-list": {
-        "description": "List the current (latest) version of every custom TypeScript tool template visible to the team. Use to discover existing tools before authoring a new one or wiring one into an agent's `spec.tools[]` via `from_template`. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "List custom tool templates",
-        "title": "List custom tool templates",
-        "required_scopes": ["agents:read"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": true,
-            "openWorldHint": true,
-            "readOnlyHint": true
-        }
-    },
-    "agent-custom-tool-templates-name-archive-create": {
-        "description": "Soft-delete every version of this template. Frozen revisions that pin it keep working; new agents can no longer reference it. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Archive a custom tool template",
-        "title": "Archive a custom tool template",
-        "required_scopes": ["agents:write"],
-        "annotations": {
-            "destructiveHint": true,
-            "idempotentHint": true,
-            "openWorldHint": true,
-            "readOnlyHint": false
-        }
-    },
-    "agent-custom-tool-templates-name-duplicate-create": {
-        "description": "Copy a template's current source + compiled output under a new name. Produces v1 of the duplicate. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Duplicate a custom tool template",
-        "title": "Duplicate a custom tool template",
-        "required_scopes": ["agents:write"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": false,
-            "openWorldHint": true,
-            "readOnlyHint": false
-        }
-    },
-    "agent-custom-tool-templates-name-publish-create": {
-        "description": "Append a new version. Provide EITHER `source` (full overwrite) OR `edits[]` (structured find/replace); `compiled_js` must accompany either form because the bundler runs client-side. `args_schema` / `returns_schema` / `requires_secrets` are optional overrides — omit to keep the prior values. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Publish a new custom tool template version",
-        "title": "Publish a new custom tool template version",
-        "required_scopes": ["agents:write"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": false,
-            "openWorldHint": true,
-            "readOnlyHint": false
-        }
-    },
-    "agent-custom-tool-templates-name-retrieve": {
-        "description": "Fetch the latest version (default) or a specific version with `?version=N`. Returns the full `source` + `compiled_js` + schemas so the concierge can read before edit. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Retrieve a custom tool template",
-        "title": "Retrieve a custom tool template",
-        "required_scopes": ["agents:read"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": true,
-            "openWorldHint": true,
-            "readOnlyHint": true
-        }
-    },
-    "agent-custom-tool-templates-name-usages-list": {
-        "description": "Every frozen agent revision that pins this custom tool template (any version, or filter by `?pinned_version=N`). Use before archiving to see who'd be affected. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Frozen agents pinning this custom tool template",
-        "title": "Frozen agents pinning this custom tool template",
-        "required_scopes": ["agents:read"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": true,
-            "openWorldHint": true,
-            "readOnlyHint": true
-        }
-    },
-    "agent-custom-tool-templates-name-versions-list": {
-        "description": "Every version row for this template name, newest first, with publisher + timestamp. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Custom tool template version history",
-        "title": "Custom tool template version history",
-        "required_scopes": ["agents:read"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": true,
-            "openWorldHint": true,
-            "readOnlyHint": true
-        }
-    },
     "agent-feedback": {
-        "description": "Optional: submit structured feedback about this PostHog MCP server itself — its tools, input schemas, response formats, errors, and instructions. Keep feedback about the MCP, not the user's task, their data, or your findings. Reach for this tool when something stood out: friction, a surprise, a missing capability, an unhelpful error, or a tool that worked particularly well. Skip it for routine tasks where nothing is worth flagging. Keep `summary` to one sentence and write the free-text fields as clear, concise bullet points, quoting tool names, parameters, and error messages where possible. Do not include user PII or sensitive query content. IMPORTANT: submitting feedback does NOT mean your work is done — keep going and finish the user's task using the other available tools. This tool is for reporting your experience to the PostHog team, not for ending the conversation.",
+        "description": "Optional: report a concrete problem with this PostHog MCP server itself — a tool, input schema, response format, error, or these instructions. Keep feedback about the MCP, not the user's task, their data, or your findings. ONLY use this when something went wrong or was missing: friction that slowed you down, a surprise, a missing capability, an unhelpful error, wrong results, or unclear docs. Feedback must be constructive and actionable — point at a specific defect the PostHog team can fix and name the change in `suggested_improvement`. Do NOT submit positive or 'everything worked' reports — they are noise we cannot act on. Skip it entirely for routine tasks where nothing went wrong. Keep `summary` to one sentence and write the free-text fields as clear, concise bullet points, quoting tool names, parameters, and error messages where possible. Do not include user PII or sensitive query content. IMPORTANT: submitting feedback does NOT mean your work is done — keep going and finish the user's task using the other available tools. This tool is for reporting problems to the PostHog team, not for ending the conversation.",
         "category": "Feedback",
         "feature": "feedback",
-        "summary": "Optional: submit feedback about the PostHog MCP server.",
+        "summary": "Optional: report a problem with the PostHog MCP server.",
         "title": "Submit agent feedback",
         "required_scopes": [],
         "always_available": true,
@@ -795,7 +739,7 @@
         }
     },
     "agent-native-tools-list": {
-        "description": "Read-only catalog of every `@posthog/*` native tool an agent can wire into `spec.tools`. Each entry includes the id, description, args schema (TypeBox-shaped), required integrations + scopes, and a cost hint (`cheap` / `medium` / `expensive`). Authoring flows use this to validate tool ids before writing them into a revision's spec. Playbook: read the `authoring-new-agents` playbook via `agent-resolve-resource` for the end-to-end authoring flow.",
+        "description": "Read-only catalog of every `@posthog/*` native tool an agent can wire into `spec.tools`. Each entry includes the id, description, args schema (TypeBox-shaped), required integrations + scopes, and a cost hint (`cheap` / `medium` / `expensive`). Authoring flows use this to validate tool ids before writing them into a revision's spec.",
         "category": "Agent stack",
         "feature": "agent_platform",
         "summary": "List native tools the runner knows",
@@ -808,176 +752,8 @@
             "readOnlyHint": true
         }
     },
-    "agent-resolve-resource": {
-        "description": "Fetch an operator playbook — a markdown guide for doing a class of agent-platform operations well. These are the same skills the agent concierge loads; resolve the relevant one BEFORE a non-trivial operation (editing/promoting a revision, wiring secrets, authoring an agent, debugging a session). Many `agent-applications-*` tool descriptions name the playbook to read first. Each playbook is also a first-class MCP resource at its own URI (see the `resource` parameter for the scheme) — clients that read resources can fetch it directly; this tool is the fallback and accepts either a bare id OR that URI. Available `resource` values: `platform-mental-model` (agents, specs, bundles, revisions), `reading-an-agent` (inspect and summarize), `debugging-sessions` (triage failures, read logs), `editing-agents-safely` (branch → validate → freeze → promote), `authoring-new-agents` (build from scratch), `secrets-and-integrations` (wire credentials safely), `designing-mcp-surfaces` (design an agent's own MCP tools), `running-and-evaluating-tests`, `using-the-console-ui`, `working-outside-the-console` (MCP / IDE / Slack), `cost-and-quota-analysis`, `safety-and-boundaries` (hard rules), `using-the-registry` (shared skill + custom-tool templates). Returns `{ id, uri, title, content }` where `content` is the full markdown.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Fetch an agent-platform operator playbook (markdown).",
-        "title": "Resolve an agent operator playbook",
-        "required_scopes": ["agents:read"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": false,
-            "openWorldHint": false,
-            "readOnlyHint": true
-        }
-    },
-    "agent-skill-templates-create": {
-        "description": "Create a new shared skill template under the active team. `name` is a slug (`research-flow`); the body is markdown (the SKILL.md), `files[]` are optional companion files (examples, schemas). Produces v1; later edits go through `agent-skill-templates-name-publish-create`. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Create a skill template (v1)",
-        "title": "Create a skill template (v1)",
-        "required_scopes": ["agents:write"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": false,
-            "openWorldHint": true,
-            "readOnlyHint": false
-        }
-    },
-    "agent-skill-templates-list": {
-        "description": "List the current (latest) version of every skill template visible to the team — both team-owned and canonical (`@posthog/*`) rows. Use to discover what's already on the shelf before authoring a new skill. `?search=<substring>` matches against name + description. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "List skill templates",
-        "title": "List skill templates",
-        "required_scopes": ["agents:read"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": true,
-            "openWorldHint": true,
-            "readOnlyHint": true
-        }
-    },
-    "agent-skill-templates-name-archive-create": {
-        "description": "Soft-delete every version of this template. Frozen revisions that still pin it keep working (the freeze copy is independent); new agents can no longer reference it. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Archive a skill template",
-        "title": "Archive a skill template",
-        "required_scopes": ["agents:write"],
-        "annotations": {
-            "destructiveHint": true,
-            "idempotentHint": true,
-            "openWorldHint": true,
-            "readOnlyHint": false
-        }
-    },
-    "agent-skill-templates-name-duplicate-create": {
-        "description": "Copy a template's current body + companion files under a new name. Produces v1 of the duplicate; the source's version history is not carried over. Useful when a canonical `@posthog/*` template is the starting point for a team-specific skill. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Duplicate a skill template",
-        "title": "Duplicate a skill template",
-        "required_scopes": ["agents:write"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": false,
-            "openWorldHint": true,
-            "readOnlyHint": false
-        }
-    },
-    "agent-skill-templates-name-files-create": {
-        "description": "Attach a new file (path + content) to the latest version of this template. Path is relative; will land at `bundle/skills/<alias>/<path>` when an agent pins this skill at freeze time. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Add a companion file to a skill template",
-        "title": "Add a companion file to a skill template",
-        "required_scopes": ["agents:write"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": false,
-            "openWorldHint": true,
-            "readOnlyHint": false
-        }
-    },
-    "agent-skill-templates-name-files-destroy": {
-        "description": "Drop a file by path from the latest version of this template. Affects future freezes; already-frozen revisions keep their copy. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Remove a companion file from a skill template",
-        "title": "Remove a companion file from a skill template",
-        "required_scopes": ["agents:write"],
-        "annotations": {
-            "destructiveHint": true,
-            "idempotentHint": true,
-            "openWorldHint": true,
-            "readOnlyHint": false
-        }
-    },
-    "agent-skill-templates-name-files-rename-create": {
-        "description": "Move `from_path` → `to_path` for a companion file on the latest version. Use when restructuring an example tree, e.g. `examples/case-a.md` → `examples/onboarding/case-a.md`. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Rename a companion file",
-        "title": "Rename a companion file",
-        "required_scopes": ["agents:write"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": false,
-            "openWorldHint": true,
-            "readOnlyHint": false
-        }
-    },
-    "agent-skill-templates-name-publish-create": {
-        "description": "Append a new version. Provide EITHER `body` (full overwrite) OR `edits[]` (structured find/replace where each `old` must match exactly once in the current body — mirrors LLMSkill's edit shape). Companion files carry forward unchanged. Returns the freshly-stamped v(n+1) row. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Publish a new skill template version",
-        "title": "Publish a new skill template version",
-        "required_scopes": ["agents:write"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": false,
-            "openWorldHint": true,
-            "readOnlyHint": false
-        }
-    },
-    "agent-skill-templates-name-retrieve": {
-        "description": "Fetch a skill template's latest version (default) or a specific version with `?version=N`. Returns the full body + companion files, so the concierge can read before edit. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Retrieve a skill template",
-        "title": "Retrieve a skill template",
-        "required_scopes": ["agents:read"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": true,
-            "openWorldHint": true,
-            "readOnlyHint": true
-        }
-    },
-    "agent-skill-templates-name-usages-list": {
-        "description": "Every frozen agent revision that pins this skill template (any version, or filter by `?pinned_version=N`). Each row carries the agent slug + name + revision short id + pinned version. Use before archiving to see who'd be affected. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Frozen agents pinning this skill template",
-        "title": "Frozen agents pinning this skill template",
-        "required_scopes": ["agents:read"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": true,
-            "openWorldHint": true,
-            "readOnlyHint": true
-        }
-    },
-    "agent-skill-templates-name-versions-list": {
-        "description": "Every version row for this template name, newest first, with publisher + timestamp. The single `is_latest: true` row marks the current version; older rows are read-only history. Playbook: read the `using-the-registry` playbook via `agent-resolve-resource` for how shared skill / tool templates work.",
-        "category": "Agent stack",
-        "feature": "agent_platform",
-        "summary": "Skill template version history",
-        "title": "Skill template version history",
-        "required_scopes": ["agents:read"],
-        "annotations": {
-            "destructiveHint": false,
-            "idempotentHint": true,
-            "openWorldHint": true,
-            "readOnlyHint": true
-        }
-    },
     "alert-create": {
-        "description": "Create a new alert on an insight. Alerts can use either threshold-based conditions or anomaly detection. For threshold alerts: set condition (absolute_value, relative_increase, relative_decrease) and threshold configuration with bounds. For anomaly detection: set detector_config with a detector type (zscore, mad, iqr, threshold, copod, ecod, hbos, isolation_forest, knn, lof, ocsvm, pca) and parameters like threshold (sensitivity 0-1, default 0.9) and window size. Ensemble detectors combine 2+ sub-detectors with AND/OR logic. Requires an insight ID and at least one subscribed user.\nNote: subscribed_users only controls email recipients. For Slack or HTTPS webhook delivery, see the recipe on cdp-functions-create — it covers integration lookup (integrations-channels-retrieve), dedupe (cdp-functions-list filtered by alert id, limit=1000), and the exact filters/inputs shape to pass.",
+        "description": "Create a new alert on an insight. Alerts can use either threshold-based conditions or anomaly detection. For threshold alerts: set condition (absolute_value, relative_increase, relative_decrease) and threshold configuration with bounds — at least one of lower or upper is required (omit detector_config). For anomaly detection: set detector_config with a detector type (zscore, mad, iqr, threshold, copod, ecod, hbos, isolation_forest, knn, lof, ocsvm, pca) and parameters like threshold (sensitivity 0-1, default 0.9) and window size. Ensemble detectors combine 2+ sub-detectors with AND/OR logic. Requires an insight ID and at least one subscribed user.\nNote: subscribed_users only controls email recipients. For Slack or HTTPS webhook delivery, see the recipe on cdp-functions-create — it covers integration lookup (integrations-channels-retrieve), dedupe (cdp-functions-list filtered by alert id, limit=1000), and the exact filters/inputs shape to pass.",
         "category": "Alerts",
         "feature": "alerts",
         "summary": "Create alert",
@@ -1033,7 +809,7 @@
         }
     },
     "alert-update": {
-        "description": "Update an existing alert by ID. Can update name, threshold, condition, config, detector_config, subscribed users, enabled state, calculation interval, and weekend skipping. Set detector_config to switch to anomaly detection, or set it to null to switch back to threshold mode. To snooze an alert, set snoozed_until to a relative date string (e.g. '2h', '1d'). To unsnooze, set snoozed_until to null.\nNote: Slack/webhook delivery for this alert lives as a HogFunction. See the recipe on cdp-functions-create for the dedupe-and-create flow; to change or remove an existing destination, find it via cdp-functions-list (type=internal_destination, limit=1000) by matching filters.properties value against this alert's id, then use cdp-functions-partial-update or cdp-functions-delete.",
+        "description": "Update an existing alert by ID. Can update name, threshold, condition, config, detector_config, subscribed users, enabled state, calculation interval, and weekend skipping. Set detector_config to switch to anomaly detection, or set it to null to switch back to threshold mode (threshold mode requires at least one of lower or upper in threshold.configuration.bounds). To snooze an alert, set snoozed_until to a relative date string (e.g. '2h', '1d'). To unsnooze, set snoozed_until to null.\nNote: Slack/webhook delivery for this alert lives as a HogFunction. See the recipe on cdp-functions-create for the dedupe-and-create flow; to change or remove an existing destination, find it via cdp-functions-list (type=internal_destination, limit=1000) by matching filters.properties value against this alert's id, then use cdp-functions-partial-update or cdp-functions-delete.",
         "category": "Alerts",
         "feature": "alerts",
         "summary": "Update alert",
@@ -1047,7 +823,7 @@
         }
     },
     "alerts-list": {
-        "description": "List all insight alerts in the project. Returns alerts with their current state, threshold or detector configuration, timing information, and firing check history. Supports filtering by insight ID via query parameter. Alerts can use either threshold-based conditions (absolute_value, relative_increase, relative_decrease) or anomaly detection via detector_config (zscore, mad, iqr, isolation_forest, knn, etc.).",
+        "description": "List all insight alerts in the project. Returns alerts with their current state, threshold or detector configuration, timing information, and firing check history. Supports filtering by insight ID (`insight_id`), fuzzy name search (`search`), and creator (`created_by` user UUID). Alerts can use either threshold-based conditions (absolute_value, relative_increase, relative_decrease) or anomaly detection via detector_config (zscore, mad, iqr, isolation_forest, knn, etc.).",
         "category": "Alerts",
         "feature": "alerts",
         "summary": "List alerts",
@@ -1190,6 +966,21 @@
         },
         "feature_flag": "tracing"
     },
+    "apm-spans-count": {
+        "description": "Return a scalar count of trace spans matching a filter set. Use this as a cheap pre-flight before `query-apm-spans` — if the count is large, narrow the filters (or set `excludeAttributes`) before pulling rows.\n\nAll parameters must be nested inside a `query` object.\n\n# When to use\n\n- Before `query-apm-spans`, to confirm the filter set returns a tractable number of spans rather than pulling rows blind.\n- When the user asks \"how many X spans are there?\" and you don't need to see individual spans.\n- To check whether a filter combination matches anything at all before committing to a full query.\n\nThis counts **spans**, not traces. A single trace contains many spans, so a count of matching spans will exceed the number of matching traces.\n\n# Parameters\n\nAll parameters go inside `query`.\n\n## query.dateRange\n\nDate range for the count. Defaults to the last hour (`-1h`).\n\n- `date_from`: Start of the range. Accepts ISO 8601 timestamps or relative formats: `-1h`, `-6h`, `-1d`, `-7d`, `-30d`.\n- `date_to`: End of the range. Same format. Omit or null for \"now\".\n\n## query.serviceNames\n\nFilter by service names. Unlike `query-apm-spans`, an unfiltered count is cheap and useful for sizing up a filter before narrowing. Use `apm-services-list` to discover services.\n\n## query.statusCodes\n\nFilter by HTTP status codes (list of integers).\n\n## query.filterGroup\n\nProperty filters to narrow the count. Same format as `query-apm-spans` filters — each filter specifies `key`, `operator`, `type` (span/span_attribute/span_resource_attribute), and optionally `value`.\n\n# Examples\n\n## Count error spans in a service over the last day\n\n```json\n{\n  \"query\": {\n    \"serviceNames\": [\"api-gateway\"],\n    \"statusCodes\": [500, 503],\n    \"dateRange\": { \"date_from\": \"-1d\" }\n  }\n}\n```\n\n## Count how many spans match a name before fetching them\n\n```json\n{\n  \"query\": {\n    \"filterGroup\": [{ \"key\": \"name\", \"operator\": \"exact\", \"type\": \"span\", \"value\": \"redis_cluster.discovery\" }],\n    \"dateRange\": { \"date_from\": \"-6h\" }\n  }\n}\n```",
+        "category": "Tracing",
+        "feature": "tracing",
+        "summary": "Count spans",
+        "title": "Count spans",
+        "required_scopes": ["tracing:read"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": true
+        },
+        "feature_flag": "tracing"
+    },
     "apm-spans-tree": {
         "description": "Aggregate trace span statistics as a call tree — one row per `(parent_service, parent_name) → (service_name, name)` edge.\n\nRequires a `spanName` to bound the matched trace set (the `(trace_id, parent_span_id)` self-join is unsafe at high cardinality without it), and a `serviceName` to scope the returned tree to a single service. All traces that contain at least one span with the given name in the given service are included, and every span in those traces from that service is aggregated against its parent.\n\nReturns rows with:\n\n- `parent_service`, `parent_name` — the parent span identity (`parent_name` is `\"<ROOT>\"` for root spans)\n- `service_name`, `name` — the child span identity\n- `count` — number of spans matched for this `(parent, child)` edge\n- `total_duration_nano`, `avg_duration_nano`, `p50_duration_nano`, `p95_duration_nano` — duration stats in nanoseconds\n- `error_count` — child spans with OTel status code `Error` (status_code = 2)\n- `avg_start_offset_nano` — average nanoseconds from the parent span's start to this child's start\n\nRows are ordered by `total_duration_nano` DESC and capped at 5000.\n\nUse to answer:\n\n- \"What does the `/checkout` flow actually call downstream?\"\n- \"Which child operation under `POST /orders` is the slowest?\"\n- \"Where is time spent inside `process_payment` — DB, external API, or something else?\"\n- \"Did the call tree under `/api/feed` change between last week and this week?\" (with `compareFilter`)\n\nFor a flat per-operation view (no parent linkage), use `apm-spans-aggregate` instead.\n\nAll parameters must be nested inside a `query` object.\n\n# Comparison window\n\nSet `query.compareFilter.compare: true` to also fetch a comparison window. The response then includes a `compare` array of the same shape as `results`.\n\n- Omit `compare_to` (or set null) to compare against the immediately previous period of equal length.\n- Set `compare_to: \"-7d\"` to compare against the window 7 days earlier (same length as the primary window).\n\n# Data narrowing\n\n## Property filters\n\n`query.filterGroup` narrows the matched span set. Same filter shape and operators as `apm-spans-aggregate` / `query-apm-spans`:\n\n- `span` — built-in span fields (trace_id, span_id, duration, name, kind, status_code)\n- `span_attribute` — span-level attributes\n- `span_resource_attribute` — resource-level attributes\n\nUse `apm-attributes-list` and `apm-attribute-values-list` to discover available attribute keys/values.\n\n## Time period\n\nUse `query.dateRange` to control the time window. Default is the last hour (`-1h`).\n\n# Parameters\n\nAll parameters go inside `query`.\n\n## query.spanName (required)\n\nThe span name that anchors the matched trace set. Every trace containing at least one span with this name (in the given `serviceName`) is included.\n\nPick a high-level entry-point span (e.g. an HTTP route or job name). Generic names (`HTTP`, `GET`) match too many traces and produce noisy aggregates. Use `query-apm-spans` first if you need to discover concrete span names.\n\n## query.serviceName (required)\n\nThe service the tree should be scoped to. Applied to the spans CTE so the returned rows only contain spans from this service, even when the matched traces also touch other services. Use `apm-services-list` to discover service names.\n\n## query.dateRange\n\nDate range for the primary window. Defaults to the last hour.\n\n- `date_from`: Start of the range. ISO 8601 or relative: `-1h`, `-6h`, `-1d`, `-7d`.\n- `date_to`: End of the range. Same format. Omit or null for \"now\".\n\n## query.compareFilter\n\nOptional comparison-window configuration. Same shape as in `apm-spans-aggregate`.\n\n## query.serviceNames\n\nList of service names to filter the matched span set. Use `apm-services-list` to discover services.\n\n## query.filterGroup\n\nProperty filters applied to both windows. See the \"Property filters\" section.\n\n# Examples\n\n## Call tree under a specific operation in the last hour\n\n```json\n{\n  \"query\": {\n    \"spanName\": \"POST /api/orders\",\n    \"serviceName\": \"web-server\"\n  }\n}\n```\n\n## Call tree over the last day\n\n```json\n{\n  \"query\": {\n    \"spanName\": \"checkout_flow\",\n    \"serviceName\": \"web-server\",\n    \"dateRange\": { \"date_from\": \"-1d\" }\n  }\n}\n```\n\n## Compare today's call tree vs last week\n\n```json\n{\n  \"query\": {\n    \"spanName\": \"POST /api/orders\",\n    \"serviceName\": \"web-server\",\n    \"dateRange\": { \"date_from\": \"-1d\" },\n    \"compareFilter\": { \"compare\": true, \"compare_to\": \"-7d\" }\n  }\n}\n```\n\n## Restrict to error-bearing traces\n\n```json\n{\n  \"query\": {\n    \"spanName\": \"POST /api/orders\",\n    \"serviceName\": \"web-server\",\n    \"filterGroup\": [{ \"key\": \"status_code\", \"operator\": \"exact\", \"type\": \"span\", \"value\": 2 }]\n  }\n}\n```\n\n# Reminders\n\n- `spanName` and `serviceName` are both required. Bound `spanName` to a specific high-level span (avoid generic names like `HTTP`); set `serviceName` to the one service whose call-tree you want.\n- Root spans have `parent_name = \"<ROOT>\"` and `avg_start_offset_nano = 0`.\n- Duration values are in nanoseconds.\n- Results are ordered by `total_duration_nano` DESC and capped at 5000 rows.\n- For a flat per-operation aggregate without parent linkage, use `apm-spans-aggregate`.\n- Use `apm-services-list`, `apm-attributes-list`, `apm-attribute-values-list` to discover values before filtering.",
         "category": "Tracing",
@@ -1206,7 +997,7 @@
         "feature_flag": "tracing"
     },
     "apm-trace-get": {
-        "description": "Fetch all spans for a specific trace by its hex trace ID. Returns the full span tree for the trace including parent-child relationships, timing, and status information. Use this to inspect a specific trace in detail after discovering it via the query tool.",
+        "description": "Fetch all spans for a specific trace by its hex trace ID. Returns the full span tree for the trace including parent-child relationships, timing, status information, and each span's attributes map. Use this to inspect a specific trace in detail after discovering it via the query tool. Set excludeAttributes to true to drop the per-span attributes map (which can hold multi-KB values like db.statement) and keep the payload compact.",
         "category": "Tracing",
         "feature": "tracing",
         "summary": "Retrieve trace spans",
@@ -1950,6 +1741,76 @@
             "readOnlyHint": false
         }
     },
+    "desktop-file-system-create": {
+        "description": "Create a new channel (folder) on the desktop surface. Pass a slash-delimited `path` (parent folders are created automatically) and `type: folder`. A blank instruction set is created for the channel automatically; use the update-instructions tool to fill it in.",
+        "category": "Core",
+        "feature": "core",
+        "summary": "Create desktop channel",
+        "title": "Create desktop channel",
+        "required_scopes": ["file_system:write"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": false,
+            "openWorldHint": true,
+            "readOnlyHint": false
+        }
+    },
+    "desktop-file-system-instructions-partial-update": {
+        "description": "Publish a new version of a channel's markdown instructions, describing what the channel contains. The `id` is the channel (folder) id. Each call creates a new version. To erase a channel's instructions, publish empty `content` — this clears the text while keeping the instruction set in place (the instruction set itself cannot be deleted).",
+        "category": "Core",
+        "feature": "core",
+        "summary": "Update channel instructions",
+        "title": "Update channel instructions",
+        "required_scopes": ["file_system:write"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": false,
+            "openWorldHint": true,
+            "readOnlyHint": false
+        }
+    },
+    "desktop-file-system-instructions-retrieve": {
+        "description": "Get the latest markdown instructions for a channel (desktop folder).",
+        "category": "Core",
+        "feature": "core",
+        "summary": "Get channel instructions",
+        "title": "Get channel instructions",
+        "required_scopes": ["file_system:read"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": true
+        }
+    },
+    "desktop-file-system-list": {
+        "description": "List channels and items on the desktop surface. Filter with query params such as `type` (e.g. \"folder\"), `parent`, `path`, `depth`, or `search`.",
+        "category": "Core",
+        "feature": "core",
+        "summary": "List desktop channels",
+        "title": "List desktop channels",
+        "required_scopes": ["file_system:read"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": true
+        }
+    },
+    "desktop-file-system-retrieve": {
+        "description": "Retrieve a single channel or item on the desktop surface by id.",
+        "category": "Core",
+        "feature": "core",
+        "summary": "Get desktop channel",
+        "title": "Get desktop channel",
+        "required_scopes": ["file_system:read"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": true
+        }
+    },
     "docs-search": {
         "description": "Use this tool for any PostHog questions to search the documentation. If the user's question mentions multiple topics, search for each topic separately and combine the results. It relies on a hybrid (semantic + full-text) search, so phrase your query in natural language. Our product and docs change often, so this tool is required for accurate answers:\n\n- How to use PostHog\n- How to use PostHog features\n- How to contact support or other humans\n- How to report bugs\n- How to submit feature requests\n- To troubleshoot something\n- What default fields and properties are available for events and persons\n- …Or anything else PostHog-related\n\nFor troubleshooting, ask the user to provide the error messages they are encountering. If no error message is involved, ask the user to describe their expected results vs. the actual results they're seeing. You avoid suggesting things that the user has told you they've already tried.\n\nImportant:\n\n1. Don't rely on your training data or previous searches/answers. Always re-check facts against current docs and tutorials. If current docs or tutorials contradict core memory on product facts, prefer the docs result.\n2. Always search PostHog docs/tutorials and prioritize results from posthog.com over training data.\n3. Always include at least one relevant docs/tutorial link in your reply.\n4. Never suggest emailing support@posthog.com or say you'll create a support ticket.\n5. Never use Community Questions as a source or cite them; they're often outdated or incorrect.",
         "category": "Docs",
@@ -2133,7 +1994,7 @@
         }
     },
     "endpoint-versions": {
-        "description": "List all versions for an endpoint, in descending order (latest first). Each version contains the query snapshot, description, data freshness, and materialization status at that point in time.",
+        "description": "List all versions for an endpoint, in descending order (latest first). Each version contains the query snapshot, description, data freshness, last execution time, and materialization status at that point in time.",
         "category": "Endpoints",
         "feature": "endpoints",
         "summary": "Get endpoint versions",
@@ -2152,6 +2013,34 @@
         "feature": "endpoints",
         "summary": "Get all endpoints",
         "title": "Get all endpoints",
+        "required_scopes": ["endpoint:read"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": true
+        }
+    },
+    "endpoints-last-execution-times": {
+        "description": "Get the most recent execution time per endpoint (endpoint-level, personal API key calls only). Pass an array of endpoint names; returns rows shaped [name, last_executed_at]. Endpoints never called are omitted from the response. Use this for a quick endpoint-level recency check during an audit; for per-version usage or history, query the query_log table with execute-sql.",
+        "category": "Endpoints",
+        "feature": "endpoints",
+        "summary": "Get endpoints last execution times",
+        "title": "Get endpoints last execution times",
+        "required_scopes": ["endpoint:read"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": true
+        }
+    },
+    "endpoints-materialization-preview": {
+        "description": "Preview the materialization transform for an endpoint before enabling it. Returns the transformed HogQL, detected range pairs, and aggregate re-aggregation info, plus a rejection reason if the query is not eligible. Supports an optional version body param. Read-only — does not enable materialization.",
+        "category": "Endpoints",
+        "feature": "endpoints",
+        "summary": "Preview endpoint materialization",
+        "title": "Preview endpoint materialization",
         "required_scopes": ["endpoint:read"],
         "annotations": {
             "destructiveHint": false,
@@ -4852,6 +4741,111 @@
             "readOnlyHint": true
         }
     },
+    "marketing-analytics-conversion-goals": {
+        "description": "List the configured marketing conversion goals for the current project. Each goal returns its kind (EventsNode / ActionsNode / DataWarehouseNode), target, last-30d count, and the integrated vs non-integrated split. Non-integrated breaks into two buckets with OPPOSITE fixes: events_without_utm_source (tag UTMs) vs events_with_unmatched_utm_source (add a custom source mapping). is_approximate is true when the 30d count may differ from the dashboard's attribution-windowed number.",
+        "category": "Marketing analytics",
+        "feature": "marketing_analytics",
+        "summary": "List conversion goals",
+        "title": "List conversion goals",
+        "required_scopes": ["marketing_analytics:read"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": true
+        },
+        "feature_flag": "marketing-analytics-mcp"
+    },
+    "marketing-analytics-data-sources": {
+        "description": "List the platform-side health of every native marketing integration: connected/not, last sync time and status, last error, rows synced, and schema-mapping coverage. This is the platform → data-warehouse side only. For PostHog-events-side health (UTM matching), call marketing-analytics-diagnose.",
+        "category": "Marketing analytics",
+        "feature": "marketing_analytics",
+        "summary": "List marketing data sources health",
+        "title": "List marketing data sources health",
+        "required_scopes": ["marketing_analytics:read"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": true
+        },
+        "feature_flag": "marketing-analytics-mcp"
+    },
+    "marketing-analytics-diagnose": {
+        "description": "READ-ONLY end-to-end diagnostic of Marketing analytics for the current project. Returns per-integration overall_status (healthy / sync_broken / events_broken / events_unmatched / events_only / schema_misconfigured / not_connected), sync state, attribution state (UTM-tagged events arriving, matched vs likely-yours-but-unmatched), conversion goals with last-30d performance and misconfig flags, and recommended next actions each pointing to the right follow-up tool. USE THIS TOOL FIRST whenever the user asks why marketing analytics looks wrong, missing, or broken. Do NOT speculate about causes before calling this tool.",
+        "category": "Marketing analytics",
+        "feature": "marketing_analytics",
+        "summary": "Diagnose marketing analytics setup",
+        "title": "Diagnose marketing analytics setup",
+        "required_scopes": ["marketing_analytics:read"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": true
+        },
+        "feature_flag": "marketing-analytics-mcp"
+    },
+    "marketing-analytics-explain-conversion-goal": {
+        "description": "Break down the events that COUNT toward a conversion goal by their own utm_source, utm_campaign, and matched integration. Returns recent sample events for inspection. This is a flat per-event breakdown of the conversion events themselves — NOT an analysis of the user's prior journey, and NOT the dashboard's attribution calculation (first-touch / last-touch / multi-touch weighting is applied by the dashboard, not here). Use when the user asks \"what utm_sources are behind my N conversions?\" or \"where do these conversions come from?\". Only EventsNode and ActionsNode goals are explained at the event level; DataWarehouseNode goals short-circuit with a note.",
+        "category": "Marketing analytics",
+        "feature": "marketing_analytics",
+        "summary": "Explain a conversion goal",
+        "title": "Explain a conversion goal",
+        "required_scopes": ["marketing_analytics:read"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": true
+        },
+        "feature_flag": "marketing-analytics-mcp"
+    },
+    "marketing-analytics-suggest-conversion-goals": {
+        "description": "Suggest custom events that are good candidates for becoming conversion goals. Ranks by volume, UTM tag coverage, and uniqueness of users. Excludes autocapture / system events and events that are already configured as goals.",
+        "category": "Marketing analytics",
+        "feature": "marketing_analytics",
+        "summary": "Suggest conversion goal candidates",
+        "title": "Suggest conversion goal candidates",
+        "required_scopes": ["marketing_analytics:read"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": true
+        },
+        "feature_flag": "marketing-analytics-mcp"
+    },
+    "marketing-analytics-suggest-utm-mappings": {
+        "description": "USE THIS TOOL — DO NOT FALL BACK TO SQL — whenever the user asks about utm_source mappings, custom_source_mappings, unmatched / non-integrated UTM values, or the question \"what utm_sources do I have and which ad platform do they belong to?\". Returns full_utm_source_catalogue (every utm_source value seen on events in the window, matched + unmatched, with event count and the integration it resolves to), source_suggestions (mapping recommendations where a value's token matches a known alias, e.g. raw facebook_paid → MetaAds), raw_unmatched_samples (every unmatched value, including likely-not-an-ad values like organic/newsletter/partner), and current_mappings (every alias already in effect — canonical + team_custom — so duplicates aren't suggested). Read-only — applying mappings is a separate write tool.",
+        "category": "Marketing analytics",
+        "feature": "marketing_analytics",
+        "summary": "Suggest utm_source → integration mappings",
+        "title": "Suggest utm_source → integration mappings",
+        "required_scopes": ["marketing_analytics:read"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": true
+        },
+        "feature_flag": "marketing-analytics-mcp"
+    },
+    "marketing-analytics-utm-audit": {
+        "description": "Audit the UTM tagging quality of recent events: campaigns with issues, mismatched utm_source vs configured integrations, unmatched custom sources, and total spend at risk. Use when the user asks why their events appear in 'non-integrated', or why UTMs are not matching the ad platform data.",
+        "category": "Marketing analytics",
+        "feature": "marketing_analytics",
+        "summary": "Audit UTM tagging quality",
+        "title": "Audit UTM tagging quality",
+        "required_scopes": ["marketing_analytics:read"],
+        "annotations": {
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true,
+            "readOnlyHint": true
+        },
+        "feature_flag": "marketing-analytics-mcp"
+    },
     "notebook-edit": {
         "description": "Edit part of a notebook's content. Use this for any change inside a notebook — text, headings, attributes, whole paragraphs. Call `notebooks-retrieve` first to see what to target.\n\nMatching is by content. The tool finds `old_value` anywhere in the notebook and swaps it for `new_value` in place.\n\nOn success, returns the updated notebook with the new content and bumped version. On a 409 or 410 error, the notebook has changed since you loaded it — call `notebooks-retrieve` and re-apply your edit against the latest content.",
         "category": "Notebooks",
@@ -5222,7 +5216,7 @@
         }
     },
     "query-apm-spans": {
-        "description": "Query trace spans with filtering by service name, status code, date range, and structured attribute filters. Supports cursor-based pagination. Returns spans with uuid, trace_id, span_id, parent_span_id, name, kind, service_name, status_code, timestamp, end_time, duration_nano, and is_root_span.\n\nUse 'apm-attributes-list' and 'apm-attribute-values-list' to discover available attributes before building filters. Use 'apm-services-list' to discover available services.\n\nCRITICAL: Be minimalist. Only include filters and settings that are essential to answer the user's specific question. Default settings are usually sufficient unless the user explicitly requests customization.\n\nAll parameters must be nested inside a `query` object.\n\n# Data narrowing\n\n## Property filters\n\nUse property filters via the `query.filterGroup` field to narrow results. Only include property filters when they are essential to directly answer the user's question.\n\nWhen using a property filter, you should:\n\n- **Choose the right type.** Span property types are:\n  - `span` — filters built-in span fields (trace_id, span_id, duration, name, kind, status_code).\n  - `span_attribute` — filters span-level attributes (e.g. \"http.method\", \"http.status_code\").\n  - `span_resource_attribute` — filters resource-level attributes (e.g. k8s labels, deployment info).\n- **Use `apm-attributes-list` to discover available attribute keys** before building filters.\n- **Use `apm-attribute-values-list` to discover valid values** for a specific attribute key.\n- **Find the suitable operator for the value type** (see supported operators below).\n\nSupported operators:\n\n- String: `exact`, `is_not`, `icontains`, `not_icontains`, `regex`, `not_regex`\n- Numeric: `exact`, `gt`, `lt`\n- Existence (no value needed): `is_set`, `is_not_set`\n\nThe `value` field accepts a string, number, or array of strings depending on the operator. Omit `value` for `is_set`/`is_not_set`.\n\n## Time period\n\nUse the `query.dateRange` field to control the time window. If the question doesn't mention time, the default is the last hour (`-1h`). Examples of relative dates: `-1h`, `-6h`, `-1d`, `-7d`, `-30d`.\n\n# Parameters\n\nAll parameters go inside `query`.\n\n## query.serviceNames\n\nFilter by service names. Use `apm-services-list` to discover available services.\n\n## query.statusCodes\n\nFilter by HTTP status codes (list of integers).\n\n## query.orderBy\n\nSort by timestamp: `latest` (default) or `earliest`.\n\n## query.filterGroup\n\nA list of property filters to narrow results. Each filter specifies `key`, `operator`, `type` (span/span_attribute/span_resource_attribute), and optionally `value`. See the \"Property filters\" section above.\n\n## query.dateRange\n\nDate range to filter results. Defaults to the last hour (`-1h`).\n\n- `date_from`: Start of the range. Accepts ISO 8601 timestamps or relative formats: `-1h`, `-6h`, `-1d`, `-7d`, `-30d`.\n- `date_to`: End of the range. Same format. Omit or null for \"now\".\n\n## query.traceId\n\nFilter to a specific trace ID (hex string). Use this when you already know the trace ID.\n\n## query.rootSpans\n\nFilter to root spans only. Defaults to true. Set to false to include all spans in the trace tree.\n\n## query.limit\n\nMaximum number of results (1-1000). Defaults to 100.\n\n## query.after\n\nCursor for pagination. Use the `nextCursor` value from the previous response.\n\n## query.prefetchSpans\n\nNumber of child spans to prefetch per trace (1-100). Useful to get a preview of trace structure without fetching the full trace.\n\n# Examples\n\n## List recent error spans\n\n```json\n{\n  \"query\": {\n    \"statusCodes\": [500, 503]\n  }\n}\n```\n\n## Search spans from a specific service\n\n```json\n{\n  \"query\": {\n    \"serviceNames\": [\"api-gateway\"],\n    \"dateRange\": { \"date_from\": \"-1d\" }\n  }\n}\n```\n\n## Filter by a span attribute\n\n```json\n{\n  \"query\": {\n    \"filterGroup\": [{ \"key\": \"http.method\", \"operator\": \"exact\", \"type\": \"span_attribute\", \"value\": \"POST\" }],\n    \"dateRange\": { \"date_from\": \"-6h\" }\n  }\n}\n```\n\n## Find slow spans\n\n```json\n{\n  \"query\": {\n    \"filterGroup\": [{ \"key\": \"duration\", \"operator\": \"gt\", \"type\": \"span\", \"value\": \"1000000000\" }],\n    \"dateRange\": { \"date_from\": \"-1d\" }\n  }\n}\n```\n\n## Combine service and attribute filters\n\n```json\n{\n  \"query\": {\n    \"serviceNames\": [\"web-server\"],\n    \"filterGroup\": [{ \"key\": \"http.status_code\", \"operator\": \"gt\", \"type\": \"span_attribute\", \"value\": \"399\" }],\n    \"dateRange\": { \"date_from\": \"-12h\" }\n  }\n}\n```\n\n## Check if a resource attribute exists\n\n```json\n{\n  \"query\": {\n    \"filterGroup\": [{ \"key\": \"k8s.pod.name\", \"operator\": \"is_set\", \"type\": \"span_resource_attribute\" }]\n  }\n}\n```\n\n# Reminders\n\n- Ensure that any property filters are directly relevant to the user's question. Avoid unnecessary filtering.\n- Use `apm-attributes-list` and `apm-attribute-values-list` to discover attributes before guessing filter keys/values.\n- Use `apm-services-list` to discover available services before filtering by service name.\n- Duration values are in nanoseconds (1 second = 1,000,000,000 nanoseconds).",
+        "description": "Query trace spans with filtering by service name, status code, date range, and structured attribute filters. Supports cursor-based pagination. Returns spans with uuid, trace_id, span_id, parent_span_id, name, kind, service_name, status_code, timestamp, end_time, duration_nano, is_root_span, matched_filter, and attributes (the span-level OTel attribute map, e.g. db.statement, http.url).\n\nUse 'apm-attributes-list' and 'apm-attribute-values-list' to discover available attributes before building filters. Use 'apm-services-list' to discover available services.\n\n# Return shape\n\nResults are **grouped by trace**, not a flat list of matching spans. For each trace that contains at least one span matching your filters, the response includes spans from that trace (up to `prefetchSpans` per trace, root span first). Two fields tell you which spans actually matched:\n\n- `matched_filter` — `1` if **this span** satisfies your `filterGroup`/`serviceNames`/`statusCodes`, `0` if it's only included because it shares a trace with a match (e.g. a prefetched sibling or the trace's root). When you filter by a child span's name, the matching child has `matched_filter: 1` and its root/siblings have `matched_filter: 0`.\n- `is_root_span` — `true` for the trace's entry span.\n\nTo collapse each matching trace to a **single row — its root span**, set `rootSpans: true` — see below. (The row is the trace's entry span, which may itself carry `matched_filter: 0` when the match was on a child.) To inspect a single trace's full tree, take a `trace_id` from the results and call `apm-trace-get`.\n\nCRITICAL: Be minimalist. Only include filters and settings that are essential to answer the user's specific question. Default settings are usually sufficient unless the user explicitly requests customization.\n\nAll parameters must be nested inside a `query` object.\n\n# Data narrowing\n\n## Property filters\n\nUse property filters via the `query.filterGroup` field to narrow results. Only include property filters when they are essential to directly answer the user's question.\n\nWhen using a property filter, you should:\n\n- **Choose the right type.** Span property types are:\n  - `span` — filters built-in span fields (trace_id, span_id, duration, name, kind, status_code).\n  - `span_attribute` — filters span-level attributes (e.g. \"http.method\", \"http.status_code\").\n  - `span_resource_attribute` — filters resource-level attributes (e.g. k8s labels, deployment info).\n- **Use `apm-attributes-list` to discover available attribute keys** before building filters.\n- **Use `apm-attribute-values-list` to discover valid values** for a specific attribute key.\n- **Find the suitable operator for the value type** (see supported operators below).\n\nSupported operators:\n\n- String: `exact`, `is_not`, `icontains`, `not_icontains`, `regex`, `not_regex`\n- Numeric: `exact`, `gt`, `lt`\n- Existence (no value needed): `is_set`, `is_not_set`\n\nThe `value` field accepts a string, number, or array of strings depending on the operator. Omit `value` for `is_set`/`is_not_set`.\n\n## Time period\n\nUse the `query.dateRange` field to control the time window. If the question doesn't mention time, the default is the last hour (`-1h`). Examples of relative dates: `-1h`, `-6h`, `-1d`, `-7d`, `-30d`.\n\n# Parameters\n\nAll parameters go inside `query`.\n\n## query.serviceNames\n\nFilter by service names. Use `apm-services-list` to discover available services.\n\n## query.statusCodes\n\nFilter by HTTP status codes (list of integers).\n\n## query.orderBy\n\nSort by timestamp: `latest` (default) or `earliest`.\n\n## query.filterGroup\n\nA list of property filters to narrow results. Each filter specifies `key`, `operator`, `type` (span/span_attribute/span_resource_attribute), and optionally `value`. See the \"Property filters\" section above.\n\n## query.dateRange\n\nDate range to filter results. Defaults to the last hour (`-1h`).\n\n- `date_from`: Start of the range. Accepts ISO 8601 timestamps or relative formats: `-1h`, `-6h`, `-1d`, `-7d`, `-30d`.\n- `date_to`: End of the range. Same format. Omit or null for \"now\".\n\n## query.traceId\n\nFilter to a specific trace ID (hex string). Use this when you already know the trace ID.\n\n## query.rootSpans\n\nSet `true` to return **only root spans** — one entry span per matching trace, which collapses each trace to a single row. Useful for \"list the traces matching X\" without sifting through `matched_filter`. Leave unset (or `false`) to get all spans of matching traces, where you read `matched_filter` to find the ones that matched. The frontend leaves this unset.\n\n## query.limit\n\nMaximum number of results (1-1000). Defaults to 100.\n\n## query.after\n\nCursor for pagination. Use the `nextCursor` value from the previous response.\n\n## query.prefetchSpans\n\nNumber of spans to return per matching trace (1-100), root span first. Useful to preview trace structure without a separate `apm-trace-get`. With the default (1) you get one span per trace (the root); raise it to also pull the matching children and their siblings (check `matched_filter` to tell them apart). Ignored when `rootSpans: true`, which always returns just the root.\n\n## query.excludeAttributes\n\nSet `true` to drop the per-span `attributes` map from results (the map stays present but empty). The attribute map holds multi-KB values like `db.statement`, so excluding it keeps large result sets compact — set it when you only need span structure/timing (`name`, `service_name`, `duration_nano`, `parent_span_id`) and not the OTel attributes. Defaults to false.\n\n# Examples\n\n## List recent error spans\n\n```json\n{\n  \"query\": {\n    \"statusCodes\": [500, 503]\n  }\n}\n```\n\n## Search spans from a specific service\n\n```json\n{\n  \"query\": {\n    \"serviceNames\": [\"api-gateway\"],\n    \"dateRange\": { \"date_from\": \"-1d\" }\n  }\n}\n```\n\n## Filter by a span attribute\n\n```json\n{\n  \"query\": {\n    \"filterGroup\": [{ \"key\": \"http.method\", \"operator\": \"exact\", \"type\": \"span_attribute\", \"value\": \"POST\" }],\n    \"dateRange\": { \"date_from\": \"-6h\" }\n  }\n}\n```\n\n## Find slow spans\n\n```json\n{\n  \"query\": {\n    \"filterGroup\": [{ \"key\": \"duration\", \"operator\": \"gt\", \"type\": \"span\", \"value\": \"1000000000\" }],\n    \"dateRange\": { \"date_from\": \"-1d\" }\n  }\n}\n```\n\n## Combine service and attribute filters\n\n```json\n{\n  \"query\": {\n    \"serviceNames\": [\"web-server\"],\n    \"filterGroup\": [{ \"key\": \"http.status_code\", \"operator\": \"gt\", \"type\": \"span_attribute\", \"value\": \"399\" }],\n    \"dateRange\": { \"date_from\": \"-12h\" }\n  }\n}\n```\n\n## Check if a resource attribute exists\n\n```json\n{\n  \"query\": {\n    \"filterGroup\": [{ \"key\": \"k8s.pod.name\", \"operator\": \"is_set\", \"type\": \"span_resource_attribute\" }]\n  }\n}\n```\n\n# Reminders\n\n- Ensure that any property filters are directly relevant to the user's question. Avoid unnecessary filtering.\n- Use `apm-attributes-list` and `apm-attribute-values-list` to discover attributes before guessing filter keys/values.\n- Use `apm-services-list` to discover available services before filtering by service name.\n- Duration values are in nanoseconds (1 second = 1,000,000,000 nanoseconds).",
         "category": "Tracing",
         "feature": "tracing",
         "summary": "Query tracing spans",
@@ -5357,7 +5351,7 @@
         "system_prompt_hint": "LLM/AI trace listing and inspection"
     },
     "query-logs": {
-        "description": "Query log entries with filtering by severity, service name, date range, search term, and structured attribute filters. Supports cursor-based pagination. The response schema (see the tool's typed output) lists every returned field — prefer `severity_text` over `severity_number` / `level`, and be aware that `trace_id` and `span_id` return zero-padded strings rather than null when unset.\n\nUse `logs-attributes-list` and `logs-attribute-values-list` to discover available attributes before building filters.\n\n# Workflow — follow this order every time\n\n1. **Discover services first.** Call `logs-attribute-values-list` with `key: \"service.name\"` and `attribute_type: \"resource\"` to see available services.\n2. **Explore resource attributes.** Call `logs-attributes-list` with `attribute_type: \"resource\"` to discover resource-level attributes (e.g. `k8s.pod.name`, `k8s.namespace.name`). Then call `logs-attribute-values-list` with `attribute_type: \"resource\"` for relevant attributes to validate what data exists.\n3. **Explore log attributes if needed.** Call `logs-attributes-list` (defaults to log attributes) and `logs-attribute-values-list` to discover log-level attributes.\n4. **Size the total volume with `logs-count`.** Call `logs-count` with the discovered `serviceNames` and filters. If it exceeds `query-logs`'s max `limit` of 1000 — or if the user's question is about _when_ something happened — continue to step 5.\n5. **Find where the volume sits with `logs-count-ranges`.** Call `logs-count-ranges` to get time-bucketed counts. Each bucket carries explicit `date_from`/`date_to` you can pass straight back as the next call's `dateRange` to drill into a sub-range. Recurse up to 3–4 levels to narrow onto a spike or a specific window. Stop when the bucket width drops below your precision goal (e.g. 1 minute).\n6. **Only then query logs.** Once the count is in range and the window is right-sized, call `query-logs` with `serviceNames` and any additional filters.\n\nMany cheap calls (attribute/value queries, counts, count-ranges) beat one expensive `query-logs`. Prefer thorough exploration over speculative log searches.\n\nCRITICAL: Be minimalist. Only include filters and settings that are essential to answer the user's specific question. Default settings are usually sufficient unless the user explicitly requests customization.\n\nMANDATORY: Never call query-logs without setting `serviceNames` or at least one `log_resource_attribute` filter. Unfiltered log queries are too broad, expensive, and noisy. If the user hasn't specified a service, use the workflow above to discover services first, then ask or infer.\n\nAll parameters must be nested inside a `query` object.\n\n# Data narrowing\n\n## Property filters\n\nUse property filters via the `query.filterGroup` field to narrow results. Only include property filters when they are essential to directly answer the user's question.\n\nWhen using a property filter, you should:\n\n- **Choose the right type.** Log property types are:\n  - `log` — filters the log body/message. Use key \"message\" for this type.\n  - `log_attribute` — filters log-level attributes (e.g. \"k8s.container.name\", \"http.method\").\n  - `log_resource_attribute` — filters resource-level attributes (e.g. k8s labels, deployment info).\n- **Use `logs-attributes-list` to discover available attribute keys** before building filters.\n- **Use `logs-attribute-values-list` to discover valid values** for a specific attribute key.\n- **Find the suitable operator for the value type** (see supported operators below).\n\n**Important:** The `logs-attributes-list` and `logs-attribute-values-list` tools default to `attribute_type: \"log\"` (log-level attributes). To search resource-level attributes (e.g. `k8s.pod.name`, `k8s.namespace.name`), you must explicitly pass `attribute_type: \"resource\"`. Forgetting this will return log-level attributes when you intended resource-level ones.\n\nSupported operators:\n\n- String: `exact`, `is_not`, `icontains`, `not_icontains`, `regex`, `not_regex`\n- Numeric: `exact`, `gt`, `lt`\n- Date: `is_date_exact`, `is_date_before`, `is_date_after`\n- Existence (no value needed): `is_set`, `is_not_set`\n\nThe `value` field accepts a string, number, or array of strings depending on the operator. Omit `value` for `is_set`/`is_not_set`.\n\n## Filtering logs by a PostHog person\n\nWhen the user references a person — by `distinct_id`, name, email, or via a prior `persons-retrieve` call — filter logs to that person via a `log_attribute` filter. The attribute key is configurable per project (it defaults to `distinct_id`); read `logs_distinct_id_attribute_key` from the team config (returned on `projects-retrieve` / `environments-retrieve`, or via the `/api/projects/:id/logs_config/` endpoint) and use that as the filter `key`.\n\nIf the team has not configured a custom key, use `distinct_id`. If a person has multiple `distinct_ids`, pass the array as the filter `value` with operator `exact` (matches any of them).\n\n```json\n{\n  \"query\": {\n    \"serviceNames\": [\"<service>\"],\n    \"filterGroup\": [\n      {\n        \"key\": \"distinct_id\",\n        \"operator\": \"exact\",\n        \"type\": \"log_attribute\",\n        \"value\": [\"<distinct_id_1>\", \"<distinct_id_2>\"]\n      }\n    ]\n  }\n}\n```\n\nDo not invent a different attribute key based on what looks plausible — use the configured key. If the configured key returns zero results, the customer's logs pipeline may not stamp person identity at all; tell the user rather than guessing.\n\n## Time period\n\nUse the `query.dateRange` field to control the time window. If the question doesn't mention time, the default is the last hour (`-1h`). Examples of relative dates: `-1h`, `-6h`, `-1d`, `-7d`, `-30d`.\n\n# Parameters\n\nAll parameters go inside `query`.\n\n## query.severityLevels\n\nFilter by log severity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. Omit to include all levels.\n\nThis filter is an **exact match against the response's `severity_text` field** using these six lowercase buckets — it is _not_ a numeric range and _not_ case-insensitive. If a service ingests non-canonical severity strings (e.g. `\"ERROR\"`, `\"Warning\"`, `\"err\"`), `severityLevels: [\"error\"]` will not match them and you will get zero rows. When a severity filter returns nothing unexpectedly, discover the actual stored values with `logs-attribute-values-list { key: \"severity_text\" }` and either filter on the value you find or fall back to a `searchTerm`. See \"Severity fields in the response\" below for the `severity_text` / `severity_number` / `level` mapping.\n\n## query.serviceNames\n\nFilter by service names. Use `logs-attribute-values-list` with `key: \"service.name\"` and `attribute_type: \"resource\"` to discover available services.\n\n## query.searchTerm\n\nFull-text search across log bodies. Use this when the user is looking for specific text in log messages.\n\n## query.orderBy\n\nSort by timestamp: `latest` (default) or `earliest`.\n\n## query.filterGroup\n\nA list of property filters to narrow results. Each filter specifies `key`, `operator`, `type` (log/log_attribute/log_resource_attribute), and optionally `value`. See the \"Property filters\" section above.\n\n## query.dateRange\n\nDate range to filter results. Defaults to the last hour (`-1h`).\n\n- `date_from`: Start of the range. Accepts ISO 8601 timestamps or relative formats: `-1h`, `-6h`, `-1d`, `-7d`, `-30d`.\n- `date_to`: End of the range. Same format. Omit or null for \"now\".\n\n## query.limit\n\nMaximum number of results (1-1000). Defaults to 100.\n\n## query.after\n\nCursor for pagination. Use the `nextCursor` value from the previous response.\n\n# Examples\n\n## List recent error logs\n\n```json\n{\n  \"query\": {\n    \"severityLevels\": [\"error\", \"fatal\"],\n    \"serviceNames\": [\"<service>\"]\n  }\n}\n```\n\n## Search for a specific log message\n\n```json\n{\n  \"query\": {\n    \"searchTerm\": \"connection refused\",\n    \"serviceNames\": [\"<service>\"],\n    \"dateRange\": { \"date_from\": \"-6h\" }\n  }\n}\n```\n\n## Filter logs from a specific service\n\n```json\n{\n  \"query\": {\n    \"serviceNames\": [\"api-gateway\"],\n    \"dateRange\": { \"date_from\": \"-1d\" }\n  }\n}\n```\n\n## Filter by a log attribute\n\n```json\n{\n  \"query\": {\n    \"serviceNames\": [\"<service>\"],\n    \"filterGroup\": [{ \"key\": \"http.status_code\", \"operator\": \"exact\", \"type\": \"log_attribute\", \"value\": \"500\" }],\n    \"dateRange\": { \"date_from\": \"-1d\" }\n  }\n}\n```\n\n## Combine severity and attribute filters\n\n```json\n{\n  \"query\": {\n    \"severityLevels\": [\"error\"],\n    \"filterGroup\": [\n      { \"key\": \"k8s.container.name\", \"operator\": \"exact\", \"type\": \"log_resource_attribute\", \"value\": \"web\" }\n    ],\n    \"dateRange\": { \"date_from\": \"-12h\" }\n  }\n}\n```\n\n## Filter by log body content using property filter\n\n```json\n{\n  \"query\": {\n    \"serviceNames\": [\"<service>\"],\n    \"filterGroup\": [{ \"key\": \"message\", \"operator\": \"icontains\", \"type\": \"log\", \"value\": \"timeout\" }]\n  }\n}\n```\n\n## Check if an attribute exists\n\n```json\n{\n  \"query\": {\n    \"serviceNames\": [\"<service>\"],\n    \"filterGroup\": [{ \"key\": \"trace_id\", \"operator\": \"is_set\", \"type\": \"log_attribute\" }]\n  }\n}\n```\n\n# Severity fields in the response\n\nEach returned log row carries three overlapping severity fields. Read and report `severity_text`; treat the other two as redundant:\n\n| Field             | What it is                                                      | Use it for                                                            |\n| ----------------- | --------------------------------------------------------------- | --------------------------------------------------------------------- |\n| `severity_text`   | Canonical severity string. **Prefer this.**                     | Filtering (`severityLevels`), grouping, and anything you show a user. |\n| `severity_number` | OpenTelemetry numeric severity (1–24). Redundant with the text. | Sorting by exact severity, or interop with OTel tooling.              |\n| `level`           | ClickHouse alias for `severity_text`. Redundant.                | Ignore — prefer `severity_text`.                                      |\n\n`severity_number` maps to the `severityLevels` buckets by OTel range. Use this when you only have a number and need the bucket, or vice-versa:\n\n| Bucket  | `severity_number` range | Canonical `severity_text` |\n| ------- | ----------------------- | ------------------------- |\n| `trace` | 1–4                     | `trace`                   |\n| `debug` | 5–8                     | `debug`                   |\n| `info`  | 9–12                    | `info`                    |\n| `warn`  | 13–16                   | `warn`                    |\n| `error` | 17–20                   | `error`                   |\n| `fatal` | 21–24                   | `fatal`                   |\n\nWhen the user asks for \"warnings and above\", that is `severityLevels: [\"warn\", \"error\", \"fatal\"]` — there is no numeric `>=` operator on the top-level severity filter.\n\n# If the query fails (500 / timeout)\n\nA `query-logs` call that returns a 500 almost always means the query scanned too much data and timed out server-side — it is rarely a bug in your filters. Do not retry the same call. Instead, narrow and re-size:\n\n1. Shorten `dateRange` (e.g. `-1h` instead of `-1d`).\n2. Add `serviceNames` or a `log_resource_attribute` filter to reduce the scan.\n3. Size the volume with `logs-count`, then locate the busy window with `logs-count-ranges`, before pulling rows again.\n\n# Reminders\n\n- Always set `serviceNames` or a resource attribute filter. Never run a broad unfiltered log query.\n- Limit `dateRange` to at most `-1d` (24 hours) unless the user explicitly requests a longer range.\n- When using `logs-attributes-list` or `logs-attribute-values-list`, remember they default to `attribute_type: \"log\"`. Pass `attribute_type: \"resource\"` to search resource-level attributes.\n- Ensure that any property filters are directly relevant to the user's question. Avoid unnecessary filtering.\n- Use `logs-attributes-list` and `logs-attribute-values-list` to discover attributes before guessing filter keys/values.\n- Prefer `searchTerm` for simple text matching; use `filterGroup` with type `log` and key `message` for regex or exact matching.",
+        "description": "Query log entries with filtering by severity, service name, date range, search term, and structured attribute filters. Supports cursor-based pagination. The response schema (see the tool's typed output) lists every returned field — prefer `severity_text` over `severity_number` / `level`, and be aware that `trace_id` and `span_id` return zero-padded strings rather than null when unset.\n\nUse `logs-attributes-list` and `logs-attribute-values-list` to discover available attributes before building filters.\n\n# Workflow — follow this order every time\n\n1. **Discover services first.** Call `logs-attribute-values-list` with `key: \"service.name\"` and `attribute_type: \"resource\"` to see available services.\n2. **Explore resource attributes.** Call `logs-attributes-list` with `attribute_type: \"resource\"` to discover resource-level attributes (e.g. `k8s.pod.name`, `k8s.namespace.name`). Then call `logs-attribute-values-list` with `attribute_type: \"resource\"` for relevant attributes to validate what data exists.\n3. **Explore log attributes if needed.** Call `logs-attributes-list` (defaults to log attributes) and `logs-attribute-values-list` to discover log-level attributes.\n4. **Size the total volume with `logs-count`.** Call `logs-count` with the discovered `serviceNames` and filters. If it exceeds `query-logs`'s max `limit` of 1000 — or if the user's question is about _when_ something happened — continue to step 5.\n5. **Find where the volume sits with `logs-count-ranges`.** Call `logs-count-ranges` to get time-bucketed counts. Each bucket carries explicit `date_from`/`date_to` you can pass straight back as the next call's `dateRange` to drill into a sub-range. Recurse up to 3–4 levels to narrow onto a spike or a specific window. Stop when the bucket width drops below your precision goal (e.g. 1 minute).\n6. **Only then query logs.** Once the count is in range and the window is right-sized, call `query-logs` with `serviceNames` and any additional filters.\n\nMany cheap calls (attribute/value queries, counts, count-ranges) beat one expensive `query-logs`. Prefer thorough exploration over speculative log searches.\n\nCRITICAL: Be minimalist. Only include filters and settings that are essential to answer the user's specific question. Default settings are usually sufficient unless the user explicitly requests customization.\n\nMANDATORY: Never call query-logs without setting `serviceNames` or at least one `log_resource_attribute` filter. Unfiltered log queries are too broad, expensive, and noisy. If the user hasn't specified a service, use the workflow above to discover services first, then ask or infer.\n\nAll parameters must be nested inside a `query` object.\n\n# Data narrowing\n\n## Property filters\n\nUse property filters via the `query.filterGroup` field to narrow results. Only include property filters when they are essential to directly answer the user's question.\n\nWhen using a property filter, you should:\n\n- **Choose the right type.** Log property types are:\n  - `log` — filters the log body/message. Use key \"message\" for this type.\n  - `log_attribute` — filters log-level attributes (e.g. \"k8s.container.name\", \"http.method\").\n  - `log_resource_attribute` — filters resource-level attributes (e.g. k8s labels, deployment info).\n- **Use `logs-attributes-list` to discover available attribute keys** before building filters.\n- **Use `logs-attribute-values-list` to discover valid values** for a specific attribute key.\n- **Find the suitable operator for the value type** (see supported operators below).\n\n**Important:** The `logs-attributes-list` and `logs-attribute-values-list` tools default to `attribute_type: \"log\"` (log-level attributes). To search resource-level attributes (e.g. `k8s.pod.name`, `k8s.namespace.name`), you must explicitly pass `attribute_type: \"resource\"`. Forgetting this will return log-level attributes when you intended resource-level ones.\n\nSupported operators:\n\n- String: `exact`, `is_not`, `icontains`, `not_icontains`, `regex`, `not_regex`\n- Numeric: `exact`, `gt`, `lt`\n- Date: `is_date_exact`, `is_date_before`, `is_date_after`\n- Existence (no value needed): `is_set`, `is_not_set`\n\nThe `value` field accepts a string, number, or array of strings depending on the operator. Omit `value` for `is_set`/`is_not_set`.\n\n## Filtering logs by a PostHog person\n\nWhen the user references a person — by `distinct_id`, name, email, or via a prior `persons-retrieve` call — filter logs to that person via a `log_attribute` filter. The attribute key is configurable per project (it defaults to `distinct_id`); read `logs_distinct_id_attribute_key` from the team config (returned on `projects-retrieve` / `environments-retrieve`, or via the `/api/projects/:id/logs_config/` endpoint) and use that as the filter `key`.\n\nIf the team has not configured a custom key, use `distinct_id`. If a person has multiple `distinct_ids`, pass the array as the filter `value` with operator `exact` (matches any of them).\n\n```json\n{\n  \"query\": {\n    \"serviceNames\": [\"<service>\"],\n    \"filterGroup\": [\n      {\n        \"key\": \"distinct_id\",\n        \"operator\": \"exact\",\n        \"type\": \"log_attribute\",\n        \"value\": [\"<distinct_id_1>\", \"<distinct_id_2>\"]\n      }\n    ]\n  }\n}\n```\n\nDo not invent a different attribute key based on what looks plausible — use the configured key. If the configured key returns zero results, the customer's logs pipeline may not stamp person identity at all; tell the user rather than guessing.\n\n## Time period\n\nUse the `query.dateRange` field to control the time window. If the question doesn't mention time, the default is the last hour (`-1h`). Examples of relative dates: `-1h`, `-6h`, `-1d`, `-7d`, `-30d`.\n\n# Parameters\n\nAll parameters go inside `query`.\n\n## query.severityLevels\n\nFilter by log severity: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. Omit to include all levels.\n\nThis filter is an **exact match against the response's `severity_text` field** using these six lowercase buckets — it is _not_ a numeric range and _not_ case-insensitive. If a service ingests non-canonical severity strings (e.g. `\"ERROR\"`, `\"Warning\"`, `\"err\"`), `severityLevels: [\"error\"]` will not match them and you will get zero rows. When a severity filter returns nothing unexpectedly, discover the actual stored values with `logs-attribute-values-list { key: \"severity_text\" }` and either filter on the value you find or fall back to a `searchTerm`. See \"Severity fields in the response\" below for the `severity_text` / `severity_number` / `level` mapping.\n\n## query.serviceNames\n\nFilter by service names. Use `logs-attribute-values-list` with `key: \"service.name\"` and `attribute_type: \"resource\"` to discover available services.\n\n## query.searchTerm\n\nFull-text search across log bodies. Use this when the user is looking for specific text in log messages.\n\n## query.orderBy\n\nSort by timestamp: `latest` (default) or `earliest`.\n\n## query.filterGroup\n\nA list of property filters to narrow results. Each filter specifies `key`, `operator`, `type` (log/log_attribute/log_resource_attribute), and optionally `value`. See the \"Property filters\" section above.\n\n## query.dateRange\n\nDate range to filter results. Defaults to the last hour (`-1h`).\n\n- `date_from`: Start of the range. Accepts ISO 8601 timestamps or relative formats: `-1h`, `-6h`, `-1d`, `-7d`, `-30d`.\n- `date_to`: End of the range. Same format. Omit or null for \"now\".\n\n## query.limit\n\nMaximum number of results (1-1000). Defaults to 100.\n\n## query.after\n\nCursor for pagination. Use the `nextCursor` value from the previous response.\n\n## query.excludeAttributes\n\nSet `true` to drop the per-log `attributes` and `resource_attributes` maps from results (the maps stay present but empty). These maps can hold large values, so excluding them keeps big result sets compact — set it when you only need `body`, `severity_text`, `timestamp`, and `service`-level fields and not the full attribute maps. Defaults to false.\n\n# Examples\n\n## List recent error logs\n\n```json\n{\n  \"query\": {\n    \"severityLevels\": [\"error\", \"fatal\"],\n    \"serviceNames\": [\"<service>\"]\n  }\n}\n```\n\n## Search for a specific log message\n\n```json\n{\n  \"query\": {\n    \"searchTerm\": \"connection refused\",\n    \"serviceNames\": [\"<service>\"],\n    \"dateRange\": { \"date_from\": \"-6h\" }\n  }\n}\n```\n\n## Filter logs from a specific service\n\n```json\n{\n  \"query\": {\n    \"serviceNames\": [\"api-gateway\"],\n    \"dateRange\": { \"date_from\": \"-1d\" }\n  }\n}\n```\n\n## Filter by a log attribute\n\n```json\n{\n  \"query\": {\n    \"serviceNames\": [\"<service>\"],\n    \"filterGroup\": [{ \"key\": \"http.status_code\", \"operator\": \"exact\", \"type\": \"log_attribute\", \"value\": \"500\" }],\n    \"dateRange\": { \"date_from\": \"-1d\" }\n  }\n}\n```\n\n## Combine severity and attribute filters\n\n```json\n{\n  \"query\": {\n    \"severityLevels\": [\"error\"],\n    \"filterGroup\": [\n      { \"key\": \"k8s.container.name\", \"operator\": \"exact\", \"type\": \"log_resource_attribute\", \"value\": \"web\" }\n    ],\n    \"dateRange\": { \"date_from\": \"-12h\" }\n  }\n}\n```\n\n## Filter by log body content using property filter\n\n```json\n{\n  \"query\": {\n    \"serviceNames\": [\"<service>\"],\n    \"filterGroup\": [{ \"key\": \"message\", \"operator\": \"icontains\", \"type\": \"log\", \"value\": \"timeout\" }]\n  }\n}\n```\n\n## Check if an attribute exists\n\n```json\n{\n  \"query\": {\n    \"serviceNames\": [\"<service>\"],\n    \"filterGroup\": [{ \"key\": \"trace_id\", \"operator\": \"is_set\", \"type\": \"log_attribute\" }]\n  }\n}\n```\n\n# Severity fields in the response\n\nEach returned log row carries three overlapping severity fields. Read and report `severity_text`; treat the other two as redundant:\n\n| Field             | What it is                                                      | Use it for                                                            |\n| ----------------- | --------------------------------------------------------------- | --------------------------------------------------------------------- |\n| `severity_text`   | Canonical severity string. **Prefer this.**                     | Filtering (`severityLevels`), grouping, and anything you show a user. |\n| `severity_number` | OpenTelemetry numeric severity (1–24). Redundant with the text. | Sorting by exact severity, or interop with OTel tooling.              |\n| `level`           | ClickHouse alias for `severity_text`. Redundant.                | Ignore — prefer `severity_text`.                                      |\n\n`severity_number` maps to the `severityLevels` buckets by OTel range. Use this when you only have a number and need the bucket, or vice-versa:\n\n| Bucket  | `severity_number` range | Canonical `severity_text` |\n| ------- | ----------------------- | ------------------------- |\n| `trace` | 1–4                     | `trace`                   |\n| `debug` | 5–8                     | `debug`                   |\n| `info`  | 9–12                    | `info`                    |\n| `warn`  | 13–16                   | `warn`                    |\n| `error` | 17–20                   | `error`                   |\n| `fatal` | 21–24                   | `fatal`                   |\n\nWhen the user asks for \"warnings and above\", that is `severityLevels: [\"warn\", \"error\", \"fatal\"]` — there is no numeric `>=` operator on the top-level severity filter.\n\n# If the query fails (500 / timeout)\n\nA `query-logs` call that returns a 500 almost always means the query scanned too much data and timed out server-side — it is rarely a bug in your filters. Do not retry the same call. Instead, narrow and re-size:\n\n1. Shorten `dateRange` (e.g. `-1h` instead of `-1d`).\n2. Add `serviceNames` or a `log_resource_attribute` filter to reduce the scan.\n3. Size the volume with `logs-count`, then locate the busy window with `logs-count-ranges`, before pulling rows again.\n\n# Reminders\n\n- Always set `serviceNames` or a resource attribute filter. Never run a broad unfiltered log query.\n- Limit `dateRange` to at most `-1d` (24 hours) unless the user explicitly requests a longer range.\n- When using `logs-attributes-list` or `logs-attribute-values-list`, remember they default to `attribute_type: \"log\"`. Pass `attribute_type: \"resource\"` to search resource-level attributes.\n- Ensure that any property filters are directly relevant to the user's question. Avoid unnecessary filtering.\n- Use `logs-attributes-list` and `logs-attribute-values-list` to discover attributes before guessing filter keys/values.\n- Prefer `searchTerm` for simple text matching; use `filterGroup` with type `log` and key `message` for regex or exact matching.",
         "category": "Logs",
         "feature": "logs",
         "summary": "Query logs",
@@ -5616,10 +5610,10 @@
             "readOnlyHint": false
         }
     },
-    "sdk-doctor-get": {
+    "sdk-health-get": {
         "description": "Returns a pre-digested health report for the PostHog SDKs this project is using. Covers which SDKs are current vs outdated (smart-semver rules with grace periods and traffic-percentage thresholds), per-version breakdowns, and a human-readable reason for each assessment. Use when the user asks about PostHog SDK versions, outdated SDKs, SDK health, version upgrade recommendations, or why events may not be captured due to SDK issues.",
-        "category": "SDK Doctor",
-        "feature": "sdk_doctor",
+        "category": "SDK Health",
+        "feature": "sdk_health",
         "summary": "Get SDK health report",
         "title": "Get SDK health report",
         "required_scopes": ["project:read"],
@@ -7095,7 +7089,7 @@
         "feature_flag": "visual-review"
     },
     "visual-review-runs-snapshots-list": {
-        "description": "List all snapshots captured in a run with their diff results. Each snapshot carries an `identifier` (e.g. Storybook story id + theme), a `result` (`unchanged`, `changed`, `new`, `removed`), an optional `classification_reason` (`tolerated_hash`, `below_threshold`, `exact`), diff percentage / pixel count, and `review_state` (`pending`, `approved`). Renders an interactive diff viewer with baseline / current / diff images and approve / tolerate actions. Paginated — pass a `limit` (e.g. 50) when a run might have many snapshots (a broken run can produce 3000+ pairs); the diff viewer caps the visible list at 100 and prioritises actionable results regardless.",
+        "description": "List the snapshots captured in a run with their diff results. Each snapshot carries an `identifier` (e.g. Storybook story id + theme), a `result` (`unchanged`, `changed`, `new`, `removed`), an optional `classification_reason` (`tolerated_hash`, `below_threshold`, `exact`), diff percentage / pixel count, and `review_state` (`pending`, `approved`). Currently-quarantined snapshots are EXCLUDED by default — they are known-flaky noise, not changes to review — and reported only as a `quarantined_count` on the response; pass `include_quarantined=true` to fetch them too. Renders an interactive diff viewer with baseline / current / diff images and approve / tolerate actions. Paginated — pass a `limit` (e.g. 50) when a run might have many snapshots (a broken run can produce 3000+ pairs); the diff viewer caps the visible list at 100 and prioritises actionable results regardless.",
         "category": "Visual review",
         "feature": "visual_review",
         "summary": "List run snapshots",

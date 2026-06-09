@@ -21,10 +21,10 @@ from __future__ import annotations
 import os
 import json
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable
 from datetime import timedelta
 from functools import cached_property
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -35,6 +35,7 @@ from django.http import StreamingHttpResponse
 from django.utils import timezone
 
 import requests
+from asgiref.sync import sync_to_async
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiParameter,
@@ -64,10 +65,11 @@ from posthog.clickhouse.query_tagging import Feature, tag_queries
 from posthog.helpers.encrypted_fields import EncryptedTextField
 from posthog.jwt import AgentInternalAudience, encode_agent_internal_jwt
 from posthog.models.organization import OrganizationMembership
+from posthog.models.user import User
 
+from .db import WRITER_DB
 from .janitor_client import JanitorClient, JanitorClientError, default_client
 from .models import AgentApplication, AgentRevision
-from .registry_freeze import FreezeError, freeze_templates_into_bundle
 from .serializers import (
     AgentApplicationSerializer,
     AgentRevisionSerializer,
@@ -78,20 +80,25 @@ from .serializers import (
     PromoteRevisionRequestSerializer,
     SetEnvKeyRequestSerializer,
     SetEnvRequestSerializer,
-    WriteBundleRequestSerializer,
-    WriteFileRequestSerializer,
+    WriteAgentMdRequestSerializer,
+    WriteSkillRequestSerializer,
+    WriteSpecRequestSerializer,
+    WriteToolRequestSerializer,
+    WriteTypedBundleRequestSerializer,
 )
 from .spec_schema import missing_required_secrets
 
 logger = logging.getLogger(__name__)
 
 
-def _resolve_application(queryset: QuerySet, lookup_value: str) -> AgentApplication | None:
+def _resolve_application(queryset: QuerySet, lookup_value: str | None) -> AgentApplication | None:
     """Look up by UUID if the URL value parses as one, otherwise by slug.
 
     Lets API consumers reference an application either by its stable id or by
     the human-readable slug — both are unique within a team.
     """
+    if lookup_value is None:
+        return None
     try:
         UUID(str(lookup_value))
         field = "pk"
@@ -110,7 +117,7 @@ class JanitorUpstreamError(APIException):
     status code where it makes sense (404 stays 404, 409 stays 409) and
     surface the janitor's body as the API response."""
 
-    status_code = status.HTTP_502_BAD_GATEWAY
+    status_code: int = status.HTTP_502_BAD_GATEWAY
     default_detail = "Upstream janitor service error"
     default_code = "janitor_upstream"
 
@@ -168,6 +175,120 @@ def _mint_preview_jwt(application: AgentApplication, revision: AgentRevision, us
         AgentInternalAudience.INGRESS_PREVIEW,
     )
     return token, ttl_seconds
+
+
+# Per-trigger route catalogue. Mirrors the `path:` arrays in each
+# `services/agent-ingress/src/triggers/<type>.ts` `routes` export — keep
+# these tables in sync (a sibling test validates the chat one). Source of
+# truth is still the ingress; this is here so the preview-token caller
+# doesn't have to grep the ingress source to know which path to hit.
+_TRIGGER_ROUTES: dict[str, dict[str, str]] = {
+    "chat": {
+        "run": "/run",
+        "send": "/send",
+        "cancel": "/cancel",
+        "listen": "/listen",
+        "client_tool_result": "/client_tool_result",
+    },
+    "mcp": {
+        "rpc": "/mcp",
+        "stream": "/mcp/stream",
+        "connect_info": "/mcp/connect-info",
+    },
+    "slack": {
+        "events": "/slack/events",
+        "interactivity": "/slack/interactivity",
+    },
+    "webhook": {
+        "post": "/webhook",
+    },
+    # `cron` triggers have no externally-callable ingress endpoint —
+    # they fire from the janitor's scheduler. Omit from the catalogue
+    # so the preview response doesn't advertise a URL the caller can't
+    # actually hit.
+}
+
+
+def _build_preview_endpoints(ingress_slug: str, spec: dict[str, Any]) -> dict[str, dict[str, str]]:
+    """Return `{trigger_type: {route_name: absolute_url}}` for every
+    trigger the spec declares that has a public ingress route in
+    `_TRIGGER_ROUTES`. Empty when `AGENT_INGRESS_PUBLIC_URL` isn't
+    set (local dev without `bin/agent-tunnel`)."""
+    base = (settings.AGENT_INGRESS_PUBLIC_URL or "").rstrip("/")
+    if not base:
+        return {}
+    triggers = spec.get("triggers") or []
+    if not isinstance(triggers, list):
+        return {}
+    out: dict[str, dict[str, str]] = {}
+    for trigger in triggers:
+        if not isinstance(trigger, dict):
+            continue
+        ttype = trigger.get("type")
+        if not isinstance(ttype, str):
+            continue
+        routes = _TRIGGER_ROUTES.get(ttype)
+        if not routes:
+            continue
+        # First trigger of a given type wins; spec-side validation
+        # should already enforce uniqueness, but be defensive.
+        if ttype in out:
+            continue
+        out[ttype] = {name: f"{base}/agents/{ingress_slug}{path}" for name, path in routes.items()}
+    return out
+
+
+def _build_preview_auth_info(spec: dict[str, Any]) -> dict[str, Any]:
+    """Surface the auth contract the caller has to satisfy when hitting
+    the endpoints above. The preview-token gate is separate from
+    `spec.auth.modes` — the caller almost always needs both."""
+    auth = spec.get("auth")
+    spec_modes: list[str] = []
+    if isinstance(auth, dict):
+        modes = auth.get("modes")
+        if isinstance(modes, list):
+            for mode in modes:
+                if isinstance(mode, dict):
+                    mtype = mode.get("type")
+                    if isinstance(mtype, str):
+                        spec_modes.append(mtype)
+    return {
+        "preview_token_header": "x-agent-preview-token",
+        "preview_token_query": "preview_token",
+        "spec_modes": spec_modes,
+        "notes": (
+            "The preview-token in `token` gates revision routing only (it admits non-live "
+            "revisions). The ingress then ALSO enforces the agent's spec.auth.modes for the "
+            "trigger you're hitting — pick one of `spec_modes` and attach the matching "
+            "credential (Authorization: Bearer for oauth/pat, x-posthog-internal for "
+            "posthog_internal, etc.). Public-auth agents accept anonymous; everything else "
+            "needs a real credential alongside the preview-token."
+        ),
+    }
+
+
+def _build_preview_proxy_info(request: Request, application: AgentApplication) -> dict[str, Any]:
+    """Same-origin Django-side proxy. Convenient for browser SSE flows
+    where attaching preview-tokens to EventSource is awkward; not a
+    full replacement for the direct path because the proxy strips
+    caller Authorization (so it can't satisfy `spec_modes` for
+    non-public agents)."""
+    team_id = application.team_id
+    proxy_base = (
+        f"{request.scheme}://{request.get_host()}"
+        f"/api/projects/{team_id}/agent_applications/{application.slug}/preview-proxy"
+    )
+    return {
+        "base": proxy_base,
+        "allowed_paths": sorted(AgentApplicationViewSet._PREVIEW_PROXY_ALLOWED_PATHS),
+        "notes": (
+            "Server-side proxy that mints the preview-token for you and forwards to ingress. "
+            "Strips caller Authorization / Cookie before forwarding, so it works for agents "
+            "whose `spec.auth.modes` accepts anonymous (public). Agents with required auth "
+            "(`oauth` / `pat` / `posthog_internal`) need the direct endpoints above with a "
+            "real credential attached."
+        ),
+    }
 
 
 class EventStreamRenderer(renderers.BaseRenderer):
@@ -328,6 +449,12 @@ _AGENT_AGGREGATE_STATS = inline_serializer(
         "failedInWindowCount": drf_serializers.IntegerField(
             help_text="Sessions in `failed` state created within the window.",
         ),
+        "pendingApprovalsCount": drf_serializers.IntegerField(
+            help_text=(
+                "Approval-gated tool requests across the team currently awaiting a decision. "
+                "0 on the per-application aggregate (which doesn't roll up approvals)."
+            ),
+        ),
     },
 )
 
@@ -380,16 +507,22 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         "approvals_retrieve",
     ]
     serializer_class = AgentApplicationSerializer
-    queryset = AgentApplication.objects.all()
+    queryset = AgentApplication.all_teams.all()
+
+    def _should_skip_parents_filter(self) -> bool:
+        # agent_platform is a product DB — models carry a plain `team_id` (no
+        # `team` FK), so the mixin's `project_id` → `team__project_id` rewrite
+        # can't resolve. Scope by `team_id` directly in safely_get_queryset.
+        return True
 
     def safely_get_queryset(self, queryset: QuerySet) -> QuerySet:
-        return queryset.filter(archived=False)
+        return queryset.filter(team_id=self.team_id, archived=False)
 
     def safely_get_object(self, queryset: QuerySet) -> AgentApplication | None:
         return _resolve_application(queryset, self.kwargs[self.lookup_url_kwarg or self.lookup_field])
 
-    def perform_create(self, serializer: AgentApplicationSerializer) -> None:
-        serializer.save(team_id=self.team_id, created_by=self.request.user)
+    def perform_create(self, serializer: drf_serializers.BaseSerializer[Any]) -> None:
+        serializer.save(team_id=self.team_id, created_by_id=self.request.user.id)
 
     def perform_destroy(self, instance: AgentApplication) -> None:
         """Soft-delete: archived=True, archived_at=NOW. Preserves audit history."""
@@ -626,7 +759,7 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         revision_id = request.query_params.get("revision_id")
         if not revision_id:
             raise ValidationError("revision_id query parameter is required for preview-proxy")
-        revision = AgentRevision.objects.filter(application=application, pk=revision_id).first()
+        revision = AgentRevision.all_teams.filter(application=application, pk=revision_id).first()
         if not revision:
             raise NotFound("Revision not found in this application")
         if application.live_revision_id == revision.id:
@@ -663,7 +796,7 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
             forwarded_headers["content-type"] = "application/json"
         try:
             upstream = requests.request(
-                method=request.method,
+                method=request.method or "GET",
                 url=upstream_url,
                 headers=forwarded_headers,
                 data=body_bytes,
@@ -674,14 +807,25 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
             logger.exception("preview-proxy upstream call failed")
             raise APIException(detail=f"preview-proxy upstream unreachable: {e}") from e
 
-        def _stream() -> Iterator[bytes]:
+        # Async iterator so Django's ASGI handler doesn't warn about consuming
+        # a sync generator. `requests` is blocking, so each chunk pull hops to
+        # a thread via sync_to_async.
+        async def _stream() -> AsyncIterator[bytes]:
+            sync_iter = upstream.iter_content(chunk_size=None)
+            sentinel = object()
+
+            def _next_chunk() -> object:
+                return next(sync_iter, sentinel)
+
             try:
-                # iter_content with no decoding keeps SSE chunks intact.
-                for chunk in upstream.iter_content(chunk_size=None):
+                while True:
+                    chunk = await sync_to_async(_next_chunk, thread_sensitive=False)()
+                    if chunk is sentinel:
+                        break
                     if chunk:
-                        yield chunk
+                        yield cast(bytes, chunk)
             finally:
-                upstream.close()
+                await sync_to_async(upstream.close, thread_sensitive=False)()
 
         resp = StreamingHttpResponse(
             _stream(),
@@ -708,7 +852,8 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
     @preview_proxy.mapping.get
     def preview_proxy_get(self, request: Request, rest: str = "", **kwargs) -> StreamingHttpResponse | Response:
         """GET passthrough for the preview-proxy — used for `/listen` SSE."""
-        return self.preview_proxy(request, rest=rest, **kwargs)
+        # `@action`-decorated method confuses mypy about the bound-method signature.
+        return self.preview_proxy(request, rest=rest, **kwargs)  # type: ignore[arg-type]
 
     # ── Preview token (direct-to-ingress flow) ───────────────────────
     # Alternative to `preview_proxy`: returns a short-lived JWT the
@@ -744,6 +889,15 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
                     "ingress_slug": drf_serializers.CharField(
                         help_text="Slug to use in the ingress URL — `<application_slug>-<revision_uuid_hex>`. Identifies the exact revision in the path-routing prefix.",
                     ),
+                    "endpoints": drf_serializers.JSONField(
+                        help_text="Per-trigger ingress URLs the caller can hit directly, derived from the revision's `spec.triggers[]`. Shape: `{<trigger_type>: {<route_name>: <absolute_url>}}`. Only includes triggers the spec actually declares. Empty when `AGENT_INGRESS_PUBLIC_URL` is unset.",
+                    ),
+                    "auth": drf_serializers.JSONField(
+                        help_text="How to attach credentials to those endpoints: preview-token header/query names, the agent's `spec.auth.modes`, and a note about the live vs preview-mode gate split. Lets the caller wire auth without grepping the ingress source.",
+                    ),
+                    "preview_proxy": drf_serializers.JSONField(
+                        help_text="Server-side alternative — `/api/projects/<team>/agent_applications/<slug>/preview-proxy/<path>` mints the JWT for you. Strips caller Authorization, so it works for public-auth agents; agents with required auth need the direct endpoints above.",
+                    ),
                 },
             )
         ),
@@ -754,14 +908,22 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         directly via the public ingress URL. The caller attaches it as
         the `x-agent-preview-token` header (or `?preview_token=` query
         param for `EventSource`). See `_mint_preview_jwt` for the
-        payload + claim binding."""
+        payload + claim binding.
+
+        The response also includes `endpoints`, `auth`, and
+        `preview_proxy` blocks so the caller can wire a preview
+        invocation without grepping the agent-ingress source for which
+        path each trigger exposes or which header name carries the
+        token. This is the "self-describing" half of preview-mode —
+        every piece of info you need to hit ingress is in one response.
+        """
         application = self.get_object()
         if application is None:
             raise NotFound("Application not found")
         revision_id = request.query_params.get("revision_id")
         if not revision_id:
             raise ValidationError("revision_id query parameter is required")
-        revision = AgentRevision.objects.filter(application=application, pk=revision_id).first()
+        revision = AgentRevision.all_teams.filter(application=application, pk=revision_id).first()
         if not revision:
             raise NotFound("Revision not found in this application")
         if application.live_revision_id == revision.id:
@@ -769,19 +931,17 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
                 "preview-token is for non-live revisions only; the live revision is reachable without a token via its public ingress URL"
             )
         token_pair = _mint_preview_jwt(application, revision, request.user)
-        if token_pair is None:
-            # No AGENT_INTERNAL_SIGNING_KEY configured — ingress's gate is
-            # also bypassed in that mode, so an empty token is fine
-            # (and signals the dev/harness configuration to the caller).
-            return Response({"token": "", "expires_in": 0, "ingress_slug": f"{application.slug}-{revision.id.hex}"})
-        token, expires_in = token_pair
-        return Response(
-            {
-                "token": token,
-                "expires_in": expires_in,
-                "ingress_slug": f"{application.slug}-{revision.id.hex}",
-            }
-        )
+        ingress_slug = f"{application.slug}-{revision.id.hex}"
+        spec = revision.spec if isinstance(revision.spec, dict) else {}
+        body: dict[str, Any] = {
+            "token": token_pair[0] if token_pair is not None else "",
+            "expires_in": token_pair[1] if token_pair is not None else 0,
+            "ingress_slug": ingress_slug,
+            "endpoints": _build_preview_endpoints(ingress_slug, spec),
+            "auth": _build_preview_auth_info(spec),
+            "preview_proxy": _build_preview_proxy_info(request, application),
+        }
+        return Response(body)
 
     @extend_schema(
         operation_id="agent_applications_stats",
@@ -1094,7 +1254,7 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
     # janitor_client. The janitor owns the wake path (markApproving + write
     # marker into pending_inputs); the runner picks up on its next claim.
 
-    _APPROVAL_RESPONSE_FIELDS = {
+    _APPROVAL_RESPONSE_FIELDS: dict[str, drf_serializers.Field] = {
         "id": drf_serializers.UUIDField(help_text="Approval request UUID — stable, used in /approvals/<id>/decide."),
         "session_id": drf_serializers.UUIDField(help_text="UUID of the session that proposed the gated call."),
         "application_id": drf_serializers.UUIDField(help_text="UUID of the parent agent application."),
@@ -1162,7 +1322,7 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         can't browse what they can't act on.
         """
         membership = OrganizationMembership.objects.filter(
-            user=self.request.user, organization_id=self.organization_id
+            user=cast(User, self.request.user), organization_id=self.organization_id
         ).first()
         if membership is None or membership.level < OrganizationMembership.Level.ADMIN:
             raise NotFound("Application not found")
@@ -1369,34 +1529,42 @@ class AgentRevisionViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         "freeze",
         "clone_from",
         "new_draft",
-        "put_file",
-        "delete_file",
         "put_bundle",
+        "put_agent_md",
+        "put_spec",
+        "put_skill",
+        "delete_skill",
+        "put_tool",
+        "delete_tool",
         "cron_fire",
     ]
     scope_object_read_actions = [
         "list",
         "retrieve",
         "manifest",
-        "get_file",
         "get_bundle",
         "validate",
         "system_prompt",
     ]
     serializer_class = AgentRevisionSerializer
-    queryset = AgentRevision.objects.all()
+    queryset = AgentRevision.all_teams.all()
 
     def get_application(self) -> AgentApplication:
         # drf-extensions nested routing passes the parent URL kwarg as
         # `parent_lookup_application_id` (see `parents_query_lookups` in the
         # nested router registration in posthog/api/__init__.py).
         app = _resolve_application(
-            AgentApplication.objects.filter(team_id=self.team_id, archived=False),
+            AgentApplication.all_teams.filter(team_id=self.team_id, archived=False),
             self.kwargs.get("parent_lookup_application_id") or self.kwargs.get("application_id"),
         )
         if app is None:
             raise NotFound("Application not found")
         return app
+
+    def _should_skip_parents_filter(self) -> bool:
+        # Product-DB model (plain team_id, no team FK). Scoping is via the
+        # application filter below — get_application() resolves it team-scoped.
+        return True
 
     def safely_get_queryset(self, queryset: QuerySet) -> QuerySet:
         return queryset.filter(application=self.get_application())
@@ -1418,7 +1586,7 @@ class AgentRevisionViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         except (ValueError, TypeError):
             return {**result, "application_id": str(self.get_application().id)}
 
-    def perform_create(self, serializer: AgentRevisionSerializer) -> None:
+    def perform_create(self, serializer: drf_serializers.BaseSerializer[Any]) -> None:
         application = self.get_application()
         # Fresh revisions start in `draft`. Parent revision is optional — if
         # set, this revision can later be diff'd against it for review.
@@ -1427,8 +1595,9 @@ class AgentRevisionViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         bundle_uri = serializer.validated_data.get("bundle_uri") or f"fs://{application.slug}/"
         serializer.save(
             application=application,
+            team_id=application.team_id,
             state="draft",
-            created_by=self.request.user,
+            created_by_id=self.request.user.id,
             bundle_uri=bundle_uri,
         )
 
@@ -1471,16 +1640,23 @@ class AgentRevisionViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
                 f"Set the value(s) via the env editor then retry."
             )
 
-        # Demote whatever's currently live, if anything different.
-        previously_live = application.live_revision
-        if previously_live and previously_live.id != revision.id:
-            previously_live.state = "archived"
-            previously_live.save(update_fields=["state", "updated_at"])
-
-        revision.state = "live"
-        revision.save(update_fields=["state", "updated_at"])
-        application.live_revision = revision
-        application.save(update_fields=["live_revision", "updated_at"])
+        # All three writes — demote previous live, set this live, point the
+        # application — must succeed or fail together. select_for_update on
+        # the application row serializes concurrent promotes so two callers
+        # can't both archive the same predecessor or land both revisions in
+        # state="live" with the application pointing at only one.
+        with transaction.atomic(using=WRITER_DB):
+            application = (
+                AgentApplication.all_teams.using(WRITER_DB).select_for_update().get(pk=revision.application_id)
+            )
+            previously_live = application.live_revision
+            if previously_live and previously_live.id != revision.id:
+                previously_live.state = "archived"
+                previously_live.save(update_fields=["state", "updated_at"])
+            revision.state = "live"
+            revision.save(update_fields=["state", "updated_at"])
+            application.live_revision = revision
+            application.save(update_fields=["live_revision", "updated_at"])
         return Response({"ok": True, "state": "live"})
 
     @extend_schema(request=None)
@@ -1492,12 +1668,18 @@ class AgentRevisionViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         revision: AgentRevision = self.get_object()
         if revision.state == "archived":
             return Response({"ok": True, "no_op": True})
-        application = revision.application
-        revision.state = "archived"
-        revision.save(update_fields=["state", "updated_at"])
-        if application.live_revision_id == revision.id:
-            application.live_revision = None
-            application.save(update_fields=["live_revision", "updated_at"])
+        # Same atomic+lock shape as promote — without it, a concurrent
+        # promote could read the pre-archive `live_revision` and overwrite
+        # our clear, leaving the application pointed at an archived row.
+        with transaction.atomic(using=WRITER_DB):
+            application = (
+                AgentApplication.all_teams.using(WRITER_DB).select_for_update().get(pk=revision.application_id)
+            )
+            revision.state = "archived"
+            revision.save(update_fields=["state", "updated_at"])
+            if application.live_revision_id == revision.id:
+                application.live_revision = None
+                application.save(update_fields=["live_revision", "updated_at"])
         return Response({"ok": True, "state": "archived"})
 
     # ── Bundle proxy actions ───────────────────────────────────────────────
@@ -1516,73 +1698,131 @@ class AgentRevisionViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         revision: AgentRevision = self.get_object()
         return Response(self._call(_janitor().manifest, str(revision.id)))
 
-    # DRF routes /file/ and /bundle/ across multiple HTTP verbs via a single
-    # @action + .mapping.<verb> chain. Three separate @action decorators with
-    # the same url_path don't merge — the last one registered wins and the
-    # others 405.
-    _FILE_PATH_PARAM = OpenApiParameter(
-        "path",
-        OpenApiTypes.STR,
-        OpenApiParameter.QUERY,
-        required=True,
-        description="Bundle-relative file path, e.g. `agent.md` or `skills/research.md`.",
+    @extend_schema(
+        operation_id="agent_applications_revisions_slack_manifest",
+        request=None,
+        responses=OpenApiResponse(
+            response=inline_serializer(
+                name="AgentRevisionSlackManifestResponse",
+                fields={
+                    "revision_id": drf_serializers.UUIDField(),
+                    "manifest": drf_serializers.JSONField(
+                        help_text=(
+                            "Slack app manifest (JSON) ready to paste into "
+                            "https://api.slack.com/apps?new_app=1 → 'From an app manifest'. Scopes and "
+                            "event subscriptions are derived from the agent's slack trigger config + tools."
+                        )
+                    ),
+                    "notes": drf_serializers.ListField(
+                        child=drf_serializers.CharField(),
+                        help_text="Reminders the manifest can't enforce (e.g. invite the bot to its channels).",
+                    ),
+                    "events_url": drf_serializers.CharField(
+                        allow_null=True, help_text="The Event Subscriptions Request URL baked into the manifest."
+                    ),
+                    "interactivity_url": drf_serializers.CharField(
+                        allow_null=True, help_text="The Interactivity Request URL (used by approval-gated tools)."
+                    ),
+                },
+            )
+        ),
     )
+    @action(detail=True, methods=["get"], url_path="slack_manifest")
+    def slack_manifest(self, request: Request, **kwargs) -> Response:
+        """Build a Slack app manifest for this revision's slack trigger.
 
-    @extend_schema(parameters=[_FILE_PATH_PARAM], request=None)
-    @action(detail=True, methods=["get"], url_path="file")
-    def get_file(self, request: Request, **kwargs) -> Response:
-        """Read one file by `?path=...`. Works on any revision state."""
+        Deterministic: the OAuth scopes and bot event subscriptions are derived
+        from the slack trigger config (`mention_only` / `auto_resume_threads` /
+        `ack_reaction`) and the agent's Slack tools, so the manifest already
+        subscribes to exactly the events the config needs. 400 if the revision
+        has no slack trigger.
+        """
         revision: AgentRevision = self.get_object()
-        path = request.query_params.get("path")
-        if not path:
-            raise ValidationError("Missing ?path=… query parameter.")
-        return Response(self._call(_janitor().get_file, str(revision.id), path))
+        base = (settings.AGENT_INGRESS_PUBLIC_URL or "").rstrip("/")
+        slug = revision.application.slug
+        events_url = f"{base}/agents/{slug}/slack/events" if base and slug else None
+        interactivity_url = f"{base}/agents/{slug}/slack/interactivity" if base and slug else None
+        result = self._call(
+            _janitor().slack_manifest,
+            str(revision.id),
+            events_url=events_url,
+            interactivity_url=interactivity_url,
+        )
+        return Response({**result, "events_url": events_url, "interactivity_url": interactivity_url})
 
-    @extend_schema(parameters=[_FILE_PATH_PARAM], request=WriteFileRequestSerializer)
-    @get_file.mapping.put
-    def put_file(self, request: Request, **kwargs) -> Response:
-        """Write one file by `?path=...`. Draft-only (janitor enforces)."""
-        revision: AgentRevision = self.get_object()
-        path = request.query_params.get("path")
-        if not path:
-            raise ValidationError("Missing ?path=… query parameter.")
-        body = WriteFileRequestSerializer(data=request.data)
-        body.is_valid(raise_exception=True)
-        return Response(self._call(_janitor().put_file, str(revision.id), path, body.validated_data["content"]))
+    # DRF routes the typed bundle verbs across @action + .mapping.<verb>
+    # chains. Three separate @action decorators with the same url_path
+    # don't merge — the last one registered wins and the others 405. So
+    # GET+PUT under /bundle/, PUT+DELETE under /skills/<id>/ and
+    # /tools/<id>/ share a single @action with mapping chains below.
 
-    @extend_schema(parameters=[_FILE_PATH_PARAM], request=None)
-    @get_file.mapping.delete
-    def delete_file(self, request: Request, **kwargs) -> Response:
-        """Delete one file by `?path=...`. Draft-only."""
-        revision: AgentRevision = self.get_object()
-        path = request.query_params.get("path")
-        if not path:
-            raise ValidationError("Missing ?path=… query parameter.")
-        return Response(self._call(_janitor().delete_file, str(revision.id), path))
+    # ── typed bundle authoring API ──────────────────────────────────────
+    # See docs/agent-platform/plans/typed-bundle-authoring-api.md. Django
+    # is a thin proxy: every byte of the payload flows through to the
+    # janitor unchanged. The legacy file-grain endpoints (file/, bundle/
+    # with mode) were removed.
 
     @extend_schema(request=None)
     @action(detail=True, methods=["get"], url_path="bundle")
     def get_bundle(self, request: Request, **kwargs) -> Response:
-        """Bulk-pull: returns `{ files: { path: content, ... }, ... }`. Use
-        this when the MCP wants the whole bundle to work on locally."""
+        """Read the full typed bundle: `{ agent_md, skills, tools, spec }`."""
         revision: AgentRevision = self.get_object()
         return Response(self._call(_janitor().get_bundle, str(revision.id)))
 
-    @extend_schema(request=WriteBundleRequestSerializer)
+    @extend_schema(request=WriteTypedBundleRequestSerializer)
     @get_bundle.mapping.put
     def put_bundle(self, request: Request, **kwargs) -> Response:
-        """Bulk-push the bundle. Body `{ files, mode: replace|merge }`."""
+        """Full-replace the typed bundle. Anything not in the payload is
+        deleted. Tool sources are AST-checked + esbuild-compiled by the
+        janitor before any S3 writes."""
         revision: AgentRevision = self.get_object()
-        body = WriteBundleRequestSerializer(data=request.data)
+        body = WriteTypedBundleRequestSerializer(data=request.data)
         body.is_valid(raise_exception=True)
-        return Response(
-            self._call(
-                _janitor().put_bundle,
-                str(revision.id),
-                body.validated_data["files"],
-                body.validated_data["mode"],
-            )
-        )
+        return Response(self._call(_janitor().put_bundle, str(revision.id), body.validated_data))
+
+    @extend_schema(request=WriteAgentMdRequestSerializer)
+    @action(detail=True, methods=["put"], url_path="agent_md")
+    def put_agent_md(self, request: Request, **kwargs) -> Response:
+        revision: AgentRevision = self.get_object()
+        body = WriteAgentMdRequestSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        return Response(self._call(_janitor().put_agent_md, str(revision.id), body.validated_data["content"]))
+
+    @extend_schema(request=WriteSpecRequestSerializer)
+    @action(detail=True, methods=["put"], url_path="spec")
+    def put_spec(self, request: Request, **kwargs) -> Response:
+        revision: AgentRevision = self.get_object()
+        body = WriteSpecRequestSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        return Response(self._call(_janitor().put_spec, str(revision.id), body.validated_data["spec"]))
+
+    @extend_schema(request=WriteSkillRequestSerializer)
+    @action(detail=True, methods=["put"], url_path=r"skills/(?P<skill_id>[a-z0-9][a-z0-9_-]*)")
+    def put_skill(self, request: Request, skill_id: str, **kwargs) -> Response:
+        revision: AgentRevision = self.get_object()
+        body = WriteSkillRequestSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        return Response(self._call(_janitor().put_skill, str(revision.id), skill_id, body.validated_data))
+
+    @extend_schema(request=None)
+    @put_skill.mapping.delete
+    def delete_skill(self, request: Request, skill_id: str, **kwargs) -> Response:
+        revision: AgentRevision = self.get_object()
+        return Response(self._call(_janitor().delete_skill, str(revision.id), skill_id))
+
+    @extend_schema(request=WriteToolRequestSerializer)
+    @action(detail=True, methods=["put"], url_path=r"tools/(?P<tool_id>[a-z0-9][a-z0-9_-]*)")
+    def put_tool(self, request: Request, tool_id: str, **kwargs) -> Response:
+        revision: AgentRevision = self.get_object()
+        body = WriteToolRequestSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        return Response(self._call(_janitor().put_tool, str(revision.id), tool_id, body.validated_data))
+
+    @extend_schema(request=None)
+    @put_tool.mapping.delete
+    def delete_tool(self, request: Request, tool_id: str, **kwargs) -> Response:
+        revision: AgentRevision = self.get_object()
+        return Response(self._call(_janitor().delete_tool, str(revision.id), tool_id))
 
     @extend_schema(
         request=None,
@@ -1759,31 +1999,31 @@ class AgentRevisionViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
     def freeze(self, request: Request, **kwargs) -> Response:
         """Freeze the bundle: draft → ready, stamps sha256 on the row.
 
-        Single atomic block now that the janitor's freeze endpoint is
-        side-effect-free w.r.t. `agent_revision`: (1) resolve
-        `spec.skills[].from_template` / `spec.tools[].from_template` refs
-        into the bundle (copies content, stamps versions, inserts join
-        rows); (2) call the janitor to compute the bundle sha (writes the
-        S3 `.frozen` marker, returns the sha); (3) stamp `state='ready'`
-        + `bundle_sha256` on the revision row from Django. Django is the
-        sole writer to `agent_revision.state`, so there's no cross-process
-        row contention on the same row to deadlock against. Any failure
-        leaves the revision in `draft`; the next freeze re-runs all three
-        phases idempotently.
+        Django is a thin proxy here: resolve template refs into the
+        bundle, ask the janitor to seal it (the janitor returns the sha
+        + the spec it derived from the typed resources), then stamp the
+        row. No `transaction.atomic()` — the janitor's freeze is idempotent
+        (on retry it re-reads the existing `.frozen` marker + re-derives
+        spec), so a partial failure here is recoverable by re-calling
+        freeze, not by transactional rollback. Holding an atomic block
+        across the janitor HTTP call previously deadlocked the
+        agent_revision row against the janitor's spec write — that's
+        moved off the janitor side as part of the same fix.
         """
         revision: AgentRevision = self.get_object()
         janitor_client = _janitor()
-        try:
-            with transaction.atomic():
-                freeze_templates_into_bundle(revision, janitor_client, team_id=self.team_id)
-                result = self._call(janitor_client.freeze, str(revision.id))
-                revision.state = "ready"
-                revision.bundle_sha256 = result["bundle_sha256"]
-                revision.save(update_fields=["state", "bundle_sha256"])
-        except FreezeError as e:
-            err = ValidationError(e.message)
-            err.extra = {"kind": e.kind, "index": e.index}  # type: ignore[attr-defined]
-            raise err from e
+        # Skill / custom-tool template pinning (freeze_templates_into_bundle) is
+        # disabled pending a registry rethink — see the commented-out template
+        # routes in routes.py.
+        result = self._call(janitor_client.freeze, str(revision.id))
+        revision.state = "ready"
+        revision.bundle_sha256 = result["bundle_sha256"]
+        derived_spec = result.get("derived_spec")
+        if derived_spec is not None:
+            revision.spec = derived_spec
+            revision.save(update_fields=["state", "bundle_sha256", "spec"])
+        else:
+            revision.save(update_fields=["state", "bundle_sha256"])
         revision.refresh_from_db()
         return Response(
             {
@@ -1802,7 +2042,7 @@ class AgentRevisionViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         source_id = str(body.validated_data["source_revision_id"])
         # Guard against cross-app cloning — the source must belong to the same
         # team. The janitor doesn't enforce this since it trusts Django.
-        source = AgentRevision.objects.filter(application__team_id=self.team_id, pk=source_id).first()
+        source = AgentRevision.all_teams.filter(application__team_id=self.team_id, pk=source_id).first()
         if source is None:
             raise NotFound("Source revision not found in this team.")
         return Response(self._call(_janitor().clone_from, str(revision.id), source_id))
@@ -1818,25 +2058,36 @@ class AgentRevisionViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         application_id = str(body.validated_data["application_id"])
         source_id = str(body.validated_data["source_revision_id"])
 
-        application = AgentApplication.objects.filter(team_id=self.team_id, pk=application_id, archived=False).first()
+        application = AgentApplication.all_teams.filter(team_id=self.team_id, pk=application_id, archived=False).first()
         if application is None:
             raise NotFound("Application not found in this team.")
-        source = AgentRevision.objects.filter(application__team_id=self.team_id, pk=source_id).first()
+        source = AgentRevision.all_teams.filter(application__team_id=self.team_id, pk=source_id).first()
         if source is None:
             raise NotFound("Source revision not found in this team.")
 
         # bundle_uri convention: the runner-side bundle store resolves this.
         # In dev/CI we use a filesystem prefix derived from the app + new
         # revision id; prod swaps in the team's S3 prefix at deploy time.
-        draft = AgentRevision.objects.create(
+        draft = AgentRevision.all_teams.create(
             application=application,
+            team_id=application.team_id,
             parent_revision=source,
-            created_by=self.request.user,
+            created_by_id=self.request.user.id,
             state="draft",
             bundle_uri=source.bundle_uri,  # same bundle root; janitor scopes by revision_id
             spec=source.spec,
         )
-        self._call(_janitor().clone_from, str(draft.id), source_id)
+        # The janitor clone is the side effect that gives the row meaning —
+        # without it, the draft is an empty pointer. If it fails, drop the
+        # row so retries don't accumulate orphans. We can't wrap in
+        # transaction.atomic() because the HTTP call is the failure mode
+        # we're guarding against; the row is committed first, then cleaned
+        # up explicitly on error.
+        try:
+            self._call(_janitor().clone_from, str(draft.id), source_id)
+        except Exception:
+            draft.delete()
+            raise
         return Response(
             {
                 "revision": AgentRevisionSerializer(draft).data,
@@ -1846,7 +2097,7 @@ class AgentRevisionViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         )
 
 
-_MEMORY_HEADER_FIELDS = {
+_MEMORY_HEADER_FIELDS: dict[str, drf_serializers.Field] = {
     "path": drf_serializers.CharField(help_text="Relative path within the agent's memory, e.g. 'incidents/db.md'."),
     "description": drf_serializers.CharField(help_text="One-line summary from the file's frontmatter."),
     "tags": drf_serializers.ListField(
@@ -2006,7 +2257,7 @@ class AgentMemoryViewSet(TeamAndOrgViewSetMixin, viewsets.ViewSet):
 
     def _get_application(self) -> AgentApplication:
         app = _resolve_application(
-            AgentApplication.objects.filter(team_id=self.team_id, archived=False),
+            AgentApplication.all_teams.filter(team_id=self.team_id, archived=False),
             self.kwargs.get("parent_lookup_application_id") or self.kwargs.get("application_id"),
         )
         if app is None:
@@ -2024,12 +2275,23 @@ class AgentMemoryViewSet(TeamAndOrgViewSetMixin, viewsets.ViewSet):
     ) -> None:
         # Local import — activity_log isn't on the hot path and avoids a top-level
         # circular import with posthog.models in some test paths.
-        from posthog.models.activity_logging.activity_log import Detail, log_activity  # noqa: PLC0415
+        import dataclasses  # noqa: PLC0415
+
+        from posthog.models.activity_logging.activity_log import (  # noqa: PLC0415
+            ActivityContextBase,
+            Detail,
+            log_activity,
+        )
+
+        @dataclasses.dataclass(frozen=True)
+        class AgentMemoryContext(ActivityContextBase):
+            memory_path: str = ""
+            extra: dict[str, Any] = dataclasses.field(default_factory=dict)
 
         log_activity(
-            organization_id=application.team.organization_id,
+            organization_id=self.organization_id,
             team_id=application.team_id,
-            user=self.request.user,
+            user=cast(User, self.request.user),
             was_impersonated=getattr(self.request, "user_is_impersonated", False),
             item_id=application.id,
             scope="AgentApplication",
@@ -2040,7 +2302,7 @@ class AgentMemoryViewSet(TeamAndOrgViewSetMixin, viewsets.ViewSet):
                 changes=None,
                 trigger=None,
                 type=None,
-                context={"memory_path": path, **extra},
+                context=AgentMemoryContext(memory_path=path, extra=extra),
             ),
         )
 
@@ -2385,14 +2647,23 @@ class AgentFleetViewSet(TeamAndOrgViewSetMixin, viewsets.ViewSet):
     URLs:
         GET /api/projects/<team>/agent_fleet/stats/           — aggregate counts + spend across every agent in the team
         GET /api/projects/<team>/agent_fleet/live_sessions/   — live sessions for every agent in the team
+        GET /api/projects/<team>/agent_fleet/approvals/       — approval-gated tool requests across every agent in the team
 
-    Both endpoints proxy the janitor (which owns the runtime DB). Used by
-    the agent-console "fleet" overview to render the cards on the agents
+    All three endpoints proxy the janitor (which owns the runtime DB). Used
+    by the agent-console "fleet" overview to render the cards on the agents
     list without per-agent N+1.
     """
 
     scope_object = "agents"
-    scope_object_read_actions = ["stats", "live_sessions"]
+    scope_object_read_actions = ["stats", "live_sessions", "approvals"]
+
+    def _require_team_admin(self) -> None:
+        """Mirror AgentApplicationViewSet — approvals are an admin-only surface."""
+        membership = OrganizationMembership.objects.filter(
+            user=cast(User, self.request.user), organization_id=self.organization_id
+        ).first()
+        if membership is None or membership.level < OrganizationMembership.Level.ADMIN:
+            raise NotFound("Not found")
 
     @extend_schema(
         operation_id="agent_fleet_stats",
@@ -2485,6 +2756,69 @@ class AgentFleetViewSet(TeamAndOrgViewSetMixin, viewsets.ViewSet):
             raise ValidationError("limit must be an integer")
         try:
             payload = _janitor().list_live_for_team(int(self.team_id), limit=limit)
+        except JanitorClientError as e:
+            raise JanitorUpstreamError(e) from e
+        return Response(payload)
+
+    @extend_schema(
+        operation_id="agent_fleet_approvals_list",
+        parameters=[
+            OpenApiParameter(
+                "state",
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "Filter by approval state. Comma-separated list accepted. "
+                    "Valid values: queued, approving, dispatched, "
+                    "dispatched_failed, rejected, expired. Defaults to all states."
+                ),
+            ),
+            OpenApiParameter(
+                "agent_id",
+                OpenApiTypes.UUID,
+                OpenApiParameter.QUERY,
+                required=False,
+                description="Optional agent UUID — narrows the listing to one application.",
+            ),
+            OpenApiParameter("limit", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("offset", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+        ],
+        request=None,
+        responses=OpenApiResponse(
+            response=inline_serializer(
+                name="AgentFleetApprovalsListResponse",
+                fields={
+                    "results": drf_serializers.ListField(
+                        child=inline_serializer(
+                            name="AgentFleetApprovalRequest",
+                            fields=AgentApplicationViewSet._APPROVAL_RESPONSE_FIELDS,
+                        ),
+                        help_text="Approval requests across every agent in the team, newest first.",
+                    ),
+                },
+            )
+        ),
+        description="Approval-gated tool requests across every agent in this team. Team-admin only.",
+    )
+    @action(detail=False, methods=["get"], url_path="approvals")
+    def approvals(self, request: Request, **kwargs) -> Response:
+        self._require_team_admin()
+        limit_param = request.query_params.get("limit")
+        offset_param = request.query_params.get("offset")
+        try:
+            limit = int(limit_param) if limit_param is not None else None
+            offset = int(offset_param) if offset_param is not None else None
+        except ValueError:
+            raise ValidationError("limit and offset must be integers")
+        try:
+            payload = _janitor().list_approvals_for_team(
+                int(self.team_id),
+                application_id=request.query_params.get("agent_id") or None,
+                state=request.query_params.get("state") or None,
+                limit=limit,
+                offset=offset,
+            )
         except JanitorClientError as e:
             raise JanitorUpstreamError(e) from e
         return Response(payload)

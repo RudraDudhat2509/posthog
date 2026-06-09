@@ -46,29 +46,41 @@ import { z } from 'zod'
 
 import {
     accumulateUsage,
+    AgentRevision,
     AgentSession,
+    AgentSpec,
+    AgentSpecSchema,
     ApprovalRequest,
     ApprovalStore,
+    BundleEntry,
     BundleStore,
+    buildSlackManifest,
     buildSystemPrompt,
     ConversationMessage,
     createLogger,
     EMPTY_USAGE_TOTAL,
     FRAMEWORK_PROMPT_VERSION,
+    instrument,
     INTERNAL_JWT_AUDIENCE,
     InternalJwtVerifyError,
     lastAssistantTextPreview,
     MemoryStore,
-    TabularStore,
+    readTypedBundle,
     RevisionStore,
     SessionQueue,
+    skillBodyPath,
+    TabularStore,
     verifyInternalJwt,
 } from '@posthog/agent-shared'
 import { listNativeTools } from '@posthog/agent-tools'
 
 import { mountMemoryRoutes } from './api/memory'
 import { mountTableRoutes } from './api/tables'
+import { buildTypedBundleRouter } from './api/typed-bundle'
 import { buildApprovalDecidedMarker } from './approval-marker'
+// compile-custom-tools.ts now exports `compileTypedTool` — wired by the
+// typed PUT /tools/:id handler, not by freeze. Freeze just validates +
+// seals; the compiled.js is already in the bundle by then.
 import { fireCronManually } from './cron-tick'
 import { asyncHandler, errorHandler } from './http-utils'
 import { SweepDeps, sweepOnce } from './sweep'
@@ -146,6 +158,68 @@ function defaultSince(): string {
     return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 }
 
+/**
+ * Derive `spec.skills[]` + `spec.tools[]` from the typed resources in the
+ * bundle and persist the merged spec onto `agent_revision.spec`. Called by
+ * the freeze handler immediately before validate + freeze so the validator
+ * sees the final shape.
+ *
+ * Authors never write the derived arrays directly — they're computed from
+ * the source of truth (the typed-resource state in the bundle) at the
+ * freeze instant. This is what makes orphan files structurally impossible:
+ * any skill markdown in the bundle gets a spec entry, any tool dir gets a
+ * spec entry. Drift requires a writer; there isn't one.
+ */
+/**
+ * Compute the freeze-time spec without persisting it. Django wraps the
+ * freeze call in `transaction.atomic()` and holds the `agent_revision`
+ * row lock for the duration; a janitor-side `UPDATE` from a different
+ * connection deadlocks (we saw 120s freezes pinning the Django proxy).
+ * The caller (Django) is the sole writer to that row — it stamps the
+ * derived spec alongside `state='ready'` and `bundle_sha256` in its
+ * own atomic.
+ */
+async function deriveSpec(args: {
+    revisionId: string
+    rev: AgentRevision
+    bundles: BundleStore
+    entries?: BundleEntry[]
+}): Promise<AgentSpec> {
+    const ctx = { revisionId: args.revisionId }
+    const { bundle } = await instrument({ key: 'derive.readBundle', log, context: ctx }, () =>
+        readTypedBundle(
+            args.revisionId,
+            args.bundles,
+            args.rev.spec as unknown as Record<string, unknown>,
+            args.entries
+        )
+    )
+    const derivedSkills = bundle.skills.map((s) => ({
+        id: s.id,
+        path: skillBodyPath(s.id),
+        description: s.description,
+    }))
+    const derivedTools = bundle.tools.map((t) => ({
+        kind: 'custom' as const,
+        id: t.id,
+        path: `tools/${t.id}`,
+    }))
+
+    const authorTools = ((args.rev.spec as Record<string, unknown>).tools as unknown[] | undefined) ?? []
+    const preservedTools = authorTools.filter(
+        (t) => typeof t === 'object' && t !== null && (t as { kind?: string }).kind !== 'custom'
+    )
+
+    const mergedSpec = {
+        ...(args.rev.spec as Record<string, unknown>),
+        skills: derivedSkills,
+        tools: [...preservedTools, ...derivedTools],
+    }
+    return instrument({ key: 'derive.parseSpec', log, context: ctx }, () =>
+        Promise.resolve(AgentSpecSchema.parse(mergedSpec))
+    )
+}
+
 const BackfillUsageBodySchema = z.object({
     /**
      * Walk sessions for this application. Required so a single call can't
@@ -156,29 +230,6 @@ const BackfillUsageBodySchema = z.object({
     dry_run: z.boolean().default(true),
     /** Cap on rows scanned per call so a giant backlog doesn't tie up the request. */
     limit: z.coerce.number().int().positive().max(5000).default(500),
-})
-
-const FilePathQuerySchema = z.object({
-    path: z.string().min(1, 'missing_path'),
-})
-
-// Per-file ceiling, well below the express.json() 8MB limit. The 8MB cap
-// lets a single ~7MB file path slip through; this stops that. Bundles
-// containing files larger than this should land via S3 presigned URLs
-// (future work — see typed-config-loader.md notes).
-const MAX_FILE_BYTES = 1_000_000 // 1 MB per file
-// Per-bundle ceiling — sum of all file content. Defends against a bulk
-// push with many under-limit files that still exhausts disk / memory.
-const MAX_BUNDLE_BYTES = 4_000_000 // 4 MB across all files in one push
-
-function utf8Bytes(s: string): number {
-    return Buffer.byteLength(s, 'utf8')
-}
-
-const FileUpdateBodySchema = z.object({
-    content: z
-        .string()
-        .refine((s) => utf8Bytes(s) <= MAX_FILE_BYTES, { message: `file content exceeds ${MAX_FILE_BYTES} bytes` }),
 })
 
 const CronFireBodySchema = z.object({
@@ -199,31 +250,6 @@ const CronFireBodySchema = z.object({
     fired_at: z.string().datetime({ offset: true }).optional(),
 })
 
-const BundleFilesSchema = z.record(z.string(), z.string()).superRefine((files, ctx) => {
-    let total = 0
-    for (const [path, content] of Object.entries(files)) {
-        const bytes = utf8Bytes(content)
-        if (bytes > MAX_FILE_BYTES) {
-            ctx.addIssue({
-                code: 'custom',
-                path: [path],
-                message: `file content exceeds ${MAX_FILE_BYTES} bytes`,
-            })
-        }
-        total += bytes
-    }
-    if (total > MAX_BUNDLE_BYTES) {
-        ctx.addIssue({
-            code: 'custom',
-            message: `bundle total exceeds ${MAX_BUNDLE_BYTES} bytes`,
-        })
-    }
-})
-const BundlePutBodySchema = z.object({
-    files: BundleFilesSchema,
-    mode: z.enum(['replace', 'merge']).default('replace'),
-})
-
 const CloneFromBodySchema = z.object({
     source_revision_id: z.string().min(1, 'missing_source_revision_id'),
 })
@@ -232,6 +258,18 @@ const ApprovalStateSchema = z.enum(['queued', 'approving', 'dispatched', 'dispat
 
 const ListApprovalsQuerySchema = z.object({
     application_id: z.string().min(1, 'missing_application_id'),
+    state: z
+        .string()
+        .optional()
+        .transform((s) => (s ? s.split(',').filter(Boolean) : undefined))
+        .pipe(z.array(ApprovalStateSchema).optional()),
+    limit: z.coerce.number().int().positive().max(500).optional(),
+    offset: z.coerce.number().int().nonnegative().optional(),
+})
+
+const ListApprovalsForTeamQuerySchema = z.object({
+    team_id: z.coerce.number().int().positive('missing_team_id'),
+    application_id: z.string().optional(),
     state: z
         .string()
         .optional()
@@ -336,8 +374,11 @@ export function buildJanitorApp(opts: JanitorServerOpts): Express {
         '/sessions/stats',
         asyncHandler(async (req, res) => {
             const q = AggregateForApplicationQuerySchema.parse(req.query)
-            const stats = await opts.queue.aggregateForApplication(q.application_id, q.since ?? defaultSince())
-            res.json(stats)
+            const [stats, pendingApprovalsCount] = await Promise.all([
+                opts.queue.aggregateForApplication(q.application_id, q.since ?? defaultSince()),
+                opts.approvals ? opts.approvals.countQueuedByApplication(q.application_id) : Promise.resolve(0),
+            ])
+            res.json({ ...stats, pendingApprovalsCount })
         })
     )
 
@@ -345,8 +386,11 @@ export function buildJanitorApp(opts: JanitorServerOpts): Express {
         '/fleet/stats',
         asyncHandler(async (req, res) => {
             const q = AggregateForTeamQuerySchema.parse(req.query)
-            const stats = await opts.queue.aggregateForTeam(q.team_id, q.since ?? defaultSince())
-            res.json(stats)
+            const [stats, pendingApprovalsCount] = await Promise.all([
+                opts.queue.aggregateForTeam(q.team_id, q.since ?? defaultSince()),
+                opts.approvals ? opts.approvals.countQueuedByTeam(q.team_id) : Promise.resolve(0),
+            ])
+            res.json({ ...stats, pendingApprovalsCount })
         })
     )
 
@@ -510,6 +554,28 @@ export function buildJanitorApp(opts: JanitorServerOpts): Express {
             const q = ListApprovalsQuerySchema.parse(req.query)
             const rows = await opts.approvals!.listByApplication(q.application_id, {
                 state: q.state,
+                limit: q.limit,
+                offset: q.offset,
+            })
+            res.json({ results: rows.map(summariseApproval) })
+        })
+    )
+
+    // Fleet-wide list — Django's `/agent_fleet/approvals/` proxies through here.
+    // Filters by team, optionally narrows to a single application. Same row
+    // shape as `/approvals` so the console can render either response with one
+    // component. When both team_id and application_id are present we still go
+    // through listByTeam so we cross-check ownership in a single round-trip.
+    app.get(
+        '/fleet/approvals',
+        asyncHandler(async (req, res) => {
+            if (!needApprovalStore(res)) {
+                return
+            }
+            const q = ListApprovalsForTeamQuerySchema.parse(req.query)
+            const rows = await opts.approvals!.listByTeam(q.team_id, {
+                state: q.state,
+                applicationId: q.application_id,
                 limit: q.limit,
                 offset: q.offset,
             })
@@ -687,57 +753,13 @@ export function buildJanitorApp(opts: JanitorServerOpts): Express {
         })
     )
 
+    // Deterministic Slack app manifest for the revision's slack trigger. The
+    // public request URLs are computed Django-side (only Django knows
+    // AGENT_INGRESS_PUBLIC_URL + the slug) and passed in as query params; the
+    // janitor supplies the spec, the app display info, and the native-tool
+    // scope catalog. 400 when the revision has no slack trigger.
     app.get(
-        '/revisions/:id/file',
-        asyncHandler(async (req, res) => {
-            if (!needRevisionStore(res)) {
-                return
-            }
-            const { path } = FilePathQuerySchema.parse(req.query)
-            if (!(await opts.bundles!.exists(req.params.id, path))) {
-                res.status(404).json({ error: 'file_not_found' })
-                return
-            }
-            const text = await opts.bundles!.readText(req.params.id, path)
-            res.json({ path, content: text })
-        })
-    )
-
-    app.put(
-        '/revisions/:id/file',
-        asyncHandler(async (req, res) => {
-            if (!needRevisionStore(res)) {
-                return
-            }
-            const { path } = FilePathQuerySchema.parse(req.query)
-            const { content } = FileUpdateBodySchema.parse(req.body)
-            const ok = await requireDraft(res, req.params.id)
-            if (!ok) {
-                return
-            }
-            await opts.bundles!.write(req.params.id, path, content)
-            res.json({ ok: true, path, bytes: Buffer.byteLength(content, 'utf8') })
-        })
-    )
-
-    app.delete(
-        '/revisions/:id/file',
-        asyncHandler(async (req, res) => {
-            if (!needRevisionStore(res)) {
-                return
-            }
-            const { path } = FilePathQuerySchema.parse(req.query)
-            const ok = await requireDraft(res, req.params.id)
-            if (!ok) {
-                return
-            }
-            await opts.bundles!.delete(req.params.id, path)
-            res.json({ ok: true, path })
-        })
-    )
-
-    app.get(
-        '/revisions/:id/bundle',
+        '/revisions/:id/slack-manifest',
         asyncHandler(async (req, res) => {
             if (!needRevisionStore(res)) {
                 return
@@ -747,46 +769,43 @@ export function buildJanitorApp(opts: JanitorServerOpts): Express {
                 res.status(404).json({ error: 'revision_not_found' })
                 return
             }
-            const entries = await opts.bundles!.list(req.params.id)
-            const files: Record<string, string> = {}
-            for (const e of entries) {
-                files[e.path] = await opts.bundles!.readText(req.params.id, e.path)
+            const application = await opts.revisions!.getApplication(rev.application_id)
+            if (!application) {
+                res.status(404).json({ error: 'application_not_found' })
+                return
             }
-            res.json({
-                revision_id: req.params.id,
-                state: rev.state,
-                bundle_sha256: rev.bundle_sha256,
-                files,
-            })
+            const eventsUrl = typeof req.query.events_url === 'string' ? req.query.events_url : null
+            const interactivityUrl =
+                typeof req.query.interactivity_url === 'string' ? req.query.interactivity_url : null
+            const scopeByTool = new Map(listNativeTools().map((t) => [t.id, t.schema.requires.scopes]))
+            try {
+                const { manifest, notes } = buildSlackManifest({
+                    triggers: rev.spec.triggers ?? [],
+                    tools: rev.spec.tools ?? [],
+                    displayName: application.name,
+                    displayDescription: application.description,
+                    eventsUrl,
+                    interactivityUrl,
+                    scopesForNativeTool: (id) => scopeByTool.get(id) ?? [],
+                })
+                res.json({ revision_id: req.params.id, manifest, notes })
+            } catch (err) {
+                if (err instanceof Error && err.message === 'no_slack_trigger') {
+                    res.status(400).json({ error: 'no_slack_trigger' })
+                    return
+                }
+                throw err
+            }
         })
     )
 
-    app.put(
-        '/revisions/:id/bundle',
-        asyncHandler(async (req, res) => {
-            if (!needRevisionStore(res)) {
-                return
-            }
-            const { files, mode } = BundlePutBodySchema.parse(req.body)
-            const ok = await requireDraft(res, req.params.id)
-            if (!ok) {
-                return
-            }
-            if (mode === 'replace') {
-                // Wipe everything before writing the new set. Keeps the bundle
-                // in lockstep with what the caller declared.
-                const existing = await opts.bundles!.list(req.params.id)
-                for (const e of existing) {
-                    await opts.bundles!.delete(req.params.id, e.path)
-                }
-            }
-            for (const [p, content] of Object.entries(files)) {
-                await opts.bundles!.write(req.params.id, p, content)
-            }
-            const listed = await opts.bundles!.list(req.params.id)
-            res.json({ ok: true, mode, files: listed })
-        })
-    )
+    // Typed bundle authoring API. The legacy file-grain endpoints
+    // (`/file?path=X`, `/bundle` with `mode`) were removed — see
+    // `docs/agent-platform/plans/typed-bundle-authoring-api.md`. The new
+    // surface lives entirely under the typed router below.
+    if (opts.revisions && opts.bundles) {
+        app.use('/revisions/:id', buildTypedBundleRouter({ revisions: opts.revisions, bundles: opts.bundles }))
+    }
 
     app.post(
         '/revisions/:id/freeze',
@@ -794,25 +813,71 @@ export function buildJanitorApp(opts: JanitorServerOpts): Express {
             if (!needRevisionStore(res)) {
                 return
             }
+            // Already-frozen revisions: re-derive the sha + spec from the
+            // existing manifest and return them. Lets callers recover from
+            // the case where the janitor wrote `.frozen` but the HTTP
+            // response was lost in flight.
+            if (opts.bundles && opts.revisions && (await opts.bundles.isFrozen(req.params.id))) {
+                const idCtx = { revisionId: req.params.id }
+                const entries = await instrument({ key: 'freeze.idempotent.list', log, context: idCtx }, () =>
+                    opts.bundles!.list(req.params.id)
+                )
+                const rev = await opts.revisions.getRevision(req.params.id)
+                let derivedSpec: AgentSpec | null = null
+                if (rev) {
+                    derivedSpec = await instrument({ key: 'freeze.idempotent.derive', log, context: idCtx }, () =>
+                        deriveSpec({ revisionId: req.params.id, rev, bundles: opts.bundles!, entries })
+                    )
+                }
+                const { createHash } = await import('node:crypto')
+                const hash = createHash('sha256')
+                for (const e of entries) {
+                    hash.update(e.path).update('\0').update(e.sha256).update('\0')
+                }
+                res.json({
+                    ok: true,
+                    state: 'ready',
+                    bundle_sha256: hash.digest('hex'),
+                    idempotent: true,
+                    derived_spec: derivedSpec,
+                })
+                return
+            }
             const ok = await requireDraft(res, req.params.id)
             if (!ok) {
                 return
             }
-            // Validate before freezing — freeze is the contract that says
-            // "this is a real candidate for running." A revision that would
-            // fail validation can't pass that gate; otherwise we'd ship dead
-            // agents like the original Hedgebox Helper v2 (empty triggers).
-            const report = await validateRevisionBundle(ok.rev!, opts.bundles!)
+            const ctx = { revisionId: req.params.id }
+            const entries = await instrument({ key: 'freeze.list', log, context: ctx }, () =>
+                opts.bundles!.list(req.params.id)
+            )
+            // Derive spec without persisting — Django holds the
+            // agent_revision row lock for the duration of its freeze
+            // atomic, so a janitor-side UPDATE deadlocks. Django stamps
+            // the returned spec alongside state + sha in its own
+            // transaction.
+            const derivedSpec = await instrument(
+                { key: 'freeze.derive', log, context: { ...ctx, files: entries.length } },
+                () =>
+                    deriveSpec({
+                        revisionId: req.params.id,
+                        rev: ok.rev!,
+                        bundles: opts.bundles!,
+                        entries,
+                    })
+            )
+            const validateInput: AgentRevision = { ...ok.rev!, spec: derivedSpec }
+            const report = await instrument({ key: 'freeze.validate', log, context: ctx }, () =>
+                validateRevisionBundle(validateInput, opts.bundles!)
+            )
             if (!report.ok) {
                 res.status(422).json({ error: 'validation_failed', report })
                 return
             }
-            const sha = await opts.bundles!.freeze(req.params.id)
-            // Django owns the `agent_revision.state` + `bundle_sha256` write.
-            // Returning sha lets the caller stamp the row inside its own
-            // transaction; the janitor stays out of that table to avoid
-            // cross-process row contention with the Django freeze atomic.
-            res.json({ ok: true, state: 'ready', bundle_sha256: sha })
+            const sha = await instrument({ key: 'freeze.seal', log, context: { ...ctx, files: entries.length } }, () =>
+                opts.bundles!.freeze(req.params.id, entries)
+            )
+            res.json({ ok: true, state: 'ready', bundle_sha256: sha, derived_spec: derivedSpec })
         })
     )
 
@@ -917,10 +982,18 @@ export function buildJanitorApp(opts: JanitorServerOpts): Express {
             if (!ok) {
                 return
             }
-            const src = await opts.bundles!.list(sourceId)
-            for (const entry of src) {
-                await opts.bundles!.copy(sourceId, entry.path, req.params.id, entry.path)
-            }
+            // Parallel copy — sequential was the cause of new_draft_create
+            // timing out at the 30s Django proxy on bundles with 15+ files,
+            // leaving a half-cloned draft. S3 server-side copy doesn't move
+            // bytes through this process so the only ceiling is the S3
+            // client connection pool, which handles dozens fine.
+            const cloneCtx = { revisionId: req.params.id, sourceRevisionId: sourceId }
+            const src = await instrument({ key: 'clone_from.list', log, context: cloneCtx }, () =>
+                opts.bundles!.list(sourceId)
+            )
+            await instrument({ key: 'clone_from.copy', log, context: { ...cloneCtx, files: src.length } }, () =>
+                Promise.all(src.map((entry) => opts.bundles!.copy(sourceId, entry.path, req.params.id, entry.path)))
+            )
             const files = await opts.bundles!.list(req.params.id)
             res.json({ ok: true, source_revision_id: sourceId, files })
         })

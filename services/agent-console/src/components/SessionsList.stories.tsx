@@ -10,7 +10,7 @@ const meta: Meta<typeof SessionsList> = {
     parameters: { layout: 'centered' },
     decorators: [
         (Story) => (
-            <div className="w-[860px]">
+            <div className="h-[640px] w-[860px]">
                 <Story />
             </div>
         ),
@@ -40,11 +40,21 @@ export const Selected: Story = {
 }
 
 export const NarrowColumn: Story = {
-    decorators: [(Story) => <div className="w-[340px]">{Story()}</div>],
+    decorators: [(Story) => <div className="h-[640px] w-[340px]">{Story()}</div>],
     args: {
         sessions: weeklyDigestSessions,
         selectedSessionId: weeklyDigestSessions[0]?.id ?? null,
         onOpenSession,
+    },
+}
+
+export const WithLoadMore: Story = {
+    args: {
+        sessions: weeklyDigestSessions,
+        totalCount: weeklyDigestSessions.length + 25,
+        hasMore: true,
+        onOpenSession,
+        onLoadMore: () => console.info('[mock] loadMore'),
     },
 }
 
@@ -58,7 +68,7 @@ export const OnlyCompleted: Story = {
 export const OnlyLive: Story = {
     args: {
         sessions: weeklyDigestSessions.filter((s) =>
-            ['idle', 'streaming', 'awaiting_approval', 'awaiting_client_tool', 'disconnected'].includes(s.state)
+            ['idle', 'streaming', 'awaiting_user_input', 'awaiting_client_tool', 'disconnected'].includes(s.state)
         ),
         onOpenSession,
     },

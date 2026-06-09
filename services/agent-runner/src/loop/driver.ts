@@ -62,19 +62,21 @@ import {
     LogLevel,
     LogSink,
     MemoryStore,
-    TabularStore,
     NoopAnalyticsSink,
+    parseClientToolResultMarker,
     Sandbox,
     SecretBroker,
     SessionEvent,
     SessionEventBus,
     SessionEventKind,
     SessionInputsStore,
+    TabularStore,
     toolSpanId,
 } from '@posthog/agent-shared'
 
 import { approvalMarkerRequestId, ApprovalPolicy, dispatchApprovedResult, queueApprovalResult } from './approval'
 import { AgentToolDeps, buildAgentTools, MetaControl, RealToolExecute, ToolResultDetails } from './build-agent-tools'
+import { resolveMaxOutputTokens } from './max-output-tokens'
 import type { McpOpenFailure, OpenedMcp } from './mcp-clients'
 import { lookupMcpToolApproval } from './mcp-tool-lookup'
 import type { IsAskerInApproverScope } from './per-asker-auth'
@@ -196,6 +198,8 @@ export interface RunSessionDeps {
     http: HttpFetcher
     /** Base URL for the PostHog API. Forwarded into `ToolContext.posthogApiBaseUrl`. */
     posthogApiBaseUrl: string
+    /** Operator override (AGENT_MAX_OUTPUT_TOKENS); clamps below model.maxTokens. */
+    maxOutputTokensOverride?: number
 }
 
 export type RunOutcome =
@@ -343,6 +347,9 @@ export async function runSession(rev: AgentRevision, session: AgentSession, deps
             memoryStore: deps.memoryStore,
             tabularStore: deps.tabularStore,
             dispatchClientTool,
+            emitClientToolCall: async (callId, toolId, args) => {
+                await emit('client_tool_call', { call_id: callId, tool_id: toolId, args })
+            },
             credentialBroker: deps.credentialBroker,
             mcpClients: deps.mcpClients,
             http: deps.http,
@@ -680,6 +687,24 @@ export async function runSession(rev: AgentRevision, session: AgentSession, deps
         }
         const streamFn = sanitizingStreamFn(baseStreamFn, nameToId)
 
+        const resolvedMaxTokens = resolveMaxOutputTokens({
+            modelMaxTokens: deps.model.maxTokens,
+            configOverride: deps.maxOutputTokensOverride,
+            specRequested: rev.spec.limits.max_output_tokens,
+            reasoning: rev.spec.reasoning,
+        })
+        if (resolvedMaxTokens.clamped) {
+            runLog.warn(
+                {
+                    requested: resolvedMaxTokens.clamped.requested,
+                    ceiling: resolvedMaxTokens.clamped.ceiling,
+                    source: resolvedMaxTokens.clamped.source,
+                    model: deps.model.id,
+                },
+                'max_output_tokens.clamped'
+            )
+        }
+
         try {
             await runAgentLoop(
                 [],
@@ -687,7 +712,7 @@ export async function runSession(rev: AgentRevision, session: AgentSession, deps
                 {
                     model: deps.model,
                     apiKey: deps.apiKey,
-                    maxTokens: 4096,
+                    maxTokens: resolvedMaxTokens.value,
                     // pi-ai ignores `reasoning` for non-reasoning models, so forward unconditionally.
                     reasoning: rev.spec.reasoning,
                     convertToLlm: (messages) => messages as unknown as Message[],
@@ -709,6 +734,43 @@ export async function runSession(rev: AgentRevision, session: AgentSession, deps
                         const out: ConversationMessage[] = []
                         const kept: ConversationMessage[] = []
                         for (const msg of pending) {
+                            // Interactive client-tool result marker (from /send).
+                            const clientToolResult = parseClientToolResultMarker(
+                                typeof msg.content === 'string'
+                                    ? msg.content
+                                    : Array.isArray(msg.content) &&
+                                        msg.content.length === 1 &&
+                                        msg.content[0].type === 'text'
+                                      ? msg.content[0].text
+                                      : ''
+                            )
+                            if (clientToolResult) {
+                                const isError = 'error' in clientToolResult
+                                const envelope: Record<string, unknown> = isError
+                                    ? {
+                                          call_id: clientToolResult.call_id,
+                                          ok: false,
+                                          error: clientToolResult.error,
+                                      }
+                                    : {
+                                          call_id: clientToolResult.call_id,
+                                          ok: true,
+                                          result: clientToolResult.result,
+                                      }
+                                const wake: ConversationMessage = {
+                                    role: 'user',
+                                    content: [{ type: 'text', text: JSON.stringify(envelope) }],
+                                    timestamp: msg.timestamp,
+                                }
+                                out.push(wake)
+                                await emit('client_tool_result', {
+                                    call_id: clientToolResult.call_id,
+                                    ...(isError
+                                        ? { error: clientToolResult.error }
+                                        : { result: clientToolResult.result }),
+                                })
+                                continue
+                            }
                             const requestId = deps.approvals ? approvalMarkerRequestId(msg) : null
                             if (!requestId || !deps.approvals) {
                                 // Plain steering input (e.g. /send) — consume it.
@@ -866,8 +928,8 @@ export async function runSession(rev: AgentRevision, session: AgentSession, deps
             return { state: 'failed', reason: lastError ?? 'model_error', turns: turn }
         }
         if (lastStopReason === 'length') {
-            await emitFailure('max_tokens', { turns: turn, ...errorContext() })
-            return { state: 'failed', reason: 'max_tokens', turns: turn }
+            await emitFailure('output_truncated', { turns: turn, ...errorContext() })
+            return { state: 'failed', reason: 'output_truncated', turns: turn }
         }
 
         // Stamps the failure source (gateway vs direct provider) + model id on

@@ -826,12 +826,27 @@ SHARING_TOKEN_GRACE_PERIOD_SECONDS = 60 * 5  # 5 minutes
 # Agent janitor service — Django proxies session list/detail/cancel requests to this URL.
 AGENT_JANITOR_BASE_URL = os.getenv("AGENT_JANITOR_BASE_URL", "http://localhost:3031")
 
+# Public base URL where agent-ingress is reachable from the outside world
+# (Slack's events callback, third-party webhooks, etc). In prod this is the
+# subdomain wired in `public-subdomain-routing.md` (e.g. `https://agents.us.posthog.com`).
+# In local dev set this to the tunnel URL from `bin/agent-tunnel` so the
+# `slack_events_url` Django returns on agent retrievals is the actual URL the
+# user pastes into their Slack app dashboard. Empty default → the field is
+# omitted from the serializer response, signalling "not externally reachable".
+AGENT_INGRESS_PUBLIC_URL = os.getenv("AGENT_INGRESS_PUBLIC_URL", "")
+
 # Shared HMAC signing key for trusted-service JWTs across the agent platform.
 # Django mints aud-scoped tokens for the ingress (draft previews) and janitor
 # (authoring RPC); each receiving service verifies signature + aud against
 # this same key. See posthog/jwt.py:AgentInternalAudience and
 # services/agent-shared/src/runtime/internal-jwt.ts.
-AGENT_INTERNAL_SIGNING_KEY = os.getenv("AGENT_INTERNAL_SIGNING_KEY", "dev-internal-signing-key-do-not-use-in-prod")
+#
+# Default is empty so missing config fails safe: janitor_client._headers()
+# skips the JWT mint when the key is unset, the janitor 401s on the missing
+# header, and the misconfiguration surfaces fast — far better than minting
+# tokens signed by a baked-in dev string that ends up dispatched to a real
+# upstream service.
+AGENT_INTERNAL_SIGNING_KEY = os.getenv("AGENT_INTERNAL_SIGNING_KEY", "")
 
 # ai-gateway billing read plane — Django proxies wallet + ledger reads to this URL.
 # Defaults to the well-known dev secret baked into ai-gateway/bin/start so

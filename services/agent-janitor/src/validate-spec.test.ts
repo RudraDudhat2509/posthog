@@ -103,51 +103,15 @@ describe('validateRevisionBundle', () => {
         ])
     })
 
-    it('catches missing compiled.js / schema.json on a custom tool', async () => {
-        const bundles = makeBundles()
-        await bundles.write('rev1', 'agent.md', 'hi')
-        await bundles.write('rev1', 'tools/wc/schema.json', '{}')
-        // compiled.js intentionally missing.
-        const report = await validateRevisionBundle(
-            mkRev({ tools: [{ kind: 'custom', id: 'wc', path: 'tools/wc/' }] }),
-            bundles
-        )
-        const codes = report.errors.map((e) => e.code).sort()
-        expect(codes).toEqual(['missing_custom_tool_compiled'])
-    })
-
-    it('catches a custom tool that has neither compiled.js nor schema.json', async () => {
-        const bundles = makeBundles()
-        await bundles.write('rev1', 'agent.md', 'hi')
-        const report = await validateRevisionBundle(
-            mkRev({ tools: [{ kind: 'custom', id: 'wc', path: 'tools/wc/' }] }),
-            bundles
-        )
-        const codes = report.errors.map((e) => e.code).sort()
-        expect(codes).toEqual(['missing_custom_tool_compiled', 'missing_custom_tool_schema'])
-    })
-
-    it('catches missing skill files', async () => {
-        const bundles = makeBundles()
-        await bundles.write('rev1', 'agent.md', 'hi')
-        await bundles.write('rev1', 'skills/present.md', 'be thorough')
-        const report = await validateRevisionBundle(
-            mkRev({
-                skills: [
-                    { id: 'present', path: 'skills/present.md' },
-                    { id: 'ghost', path: 'skills/missing.md' },
-                ],
-            }),
-            bundles
-        )
-        expect(report.errors).toEqual([
-            {
-                code: 'missing_skill',
-                message: expect.stringContaining('skills/missing.md'),
-                pointer: 'spec.skills[1].path',
-            },
-        ])
-    })
+    // Tool / skill bundle-presence checks were deleted alongside the typed
+    // bundle authoring API rollout — see
+    // `docs/agent-platform/plans/typed-bundle-authoring-api.md`. Authors no
+    // longer write paths; `spec.tools[]` and `spec.skills[]` are server-
+    // derived at freeze from the typed resources in the bundle, so a
+    // dangling reference is structurally impossible. The legacy tests
+    // (missing_custom_tool_source, missing_custom_tool_schema,
+    // invalid_custom_tool_source, missing_skill, orphan_custom_tool_dir,
+    // orphan_skill_file) are gone with the codes they covered.
 
     it('reports no_triggers when spec.triggers is empty', async () => {
         const bundles = makeBundles()

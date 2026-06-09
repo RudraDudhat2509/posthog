@@ -12,6 +12,8 @@
  *   - distinct threads → distinct sessions
  *   - different user in same thread → elevation_required (B.1 v0 security fix
  *     — Slack thread replies must not advance a session opened by another user)
+ *   - allow_workspace_participants: owner-only (default) rejects + replies
+ *     in-thread; workspace-open lets any trusted-workspace user advance it
  *   - completed thread → fresh session
  *   - bot_id events ignored (no echo loop)
  *   - signature verification: missing, stale, wrong, valid
@@ -717,6 +719,523 @@ describe('slack trigger: real e2e', () => {
                 )
                 expect(res.status).toBe(200)
                 expect(res.body.challenge).toBe('xyz')
+            } finally {
+                await cc.teardown()
+            }
+        })
+    })
+
+    describe('mention_only + auto_resume_threads', () => {
+        /** Slack trigger configured to require @-mentions to start a session,
+         *  optionally letting non-mention replies through when they land in a
+         *  thread the bot already owns. */
+        function trigger(opts: { mention_only: boolean; auto_resume_threads: boolean }): Record<string, unknown> {
+            return {
+                type: 'slack',
+                config: {
+                    mention_only: opts.mention_only,
+                    auto_resume_threads: opts.auto_resume_threads,
+                    trusted_workspaces: '*',
+                },
+            }
+        }
+
+        it('mention_only=false (default): plain message events still enqueue (back-compat)', async () => {
+            // The original behaviour was "accept anything that isn't a bot
+            // message" — keep that working unchanged when mention_only is off,
+            // so existing bots that watch whole channels don't regress.
+            c.setScript([fauxText('saw it')])
+            await c.deployAgent({
+                slug: 'open-channel',
+                spec: {
+                    triggers: [
+                        { type: 'chat', config: { require_auth: false } },
+                        trigger({ mention_only: false, auto_resume_threads: false }),
+                    ],
+                    auth: { modes: [{ type: 'public', acknowledge_public_exposure: true }] },
+                },
+                encrypted_env: SLACK_ENV,
+            })
+            const res = await c.slackPost(
+                'open-channel',
+                'events',
+                slackEvent({ eventType: 'message', text: 'random chatter' }),
+                SLACK_SECRET
+            )
+            expect(res.status).toBe(200)
+            expect(res.body.session_id).toBeTruthy()
+        })
+
+        it('mention_only=true: app_mention accepted, plain message dropped', async () => {
+            await c.deployAgent({
+                slug: 'gated-mention',
+                spec: {
+                    triggers: [
+                        { type: 'chat', config: { require_auth: false } },
+                        trigger({ mention_only: true, auto_resume_threads: false }),
+                    ],
+                    auth: { modes: [{ type: 'public', acknowledge_public_exposure: true }] },
+                },
+                encrypted_env: SLACK_ENV,
+            })
+            // Plain message → dropped with structured reason; no session id.
+            const drop = await c.slackPost(
+                'gated-mention',
+                'events',
+                slackEvent({ eventType: 'message', text: 'hey there' }),
+                SLACK_SECRET
+            )
+            expect(drop.status).toBe(200)
+            expect(drop.body.dropped).toBe('mention_only')
+            expect(drop.body.session_id).toBeUndefined()
+            // app_mention → enqueued.
+            c.setScript([fauxText('hi')])
+            const accept = await c.slackPost(
+                'gated-mention',
+                'events',
+                slackEvent({ eventType: 'app_mention', text: '<@U0BOT> hello' }),
+                SLACK_SECRET
+            )
+            expect(accept.status).toBe(200)
+            expect(accept.body.session_id).toBeTruthy()
+        })
+
+        it('mention_only=true + auto_resume_threads=true: non-mention reply accepted when thread has an existing session', async () => {
+            // First turn: @-mention seeds a session keyed by thread_ts.
+            // Second turn: same thread_ts, plain message (no @-mention).
+            // The ingress should resume the same session and the seed message
+            // should carry `mention: false` so the model knows to judge intent.
+            c.setScript([fauxText('first reply'), fauxText('second reply')])
+            await c.deployAgent({
+                slug: 'thread-resume',
+                spec: {
+                    triggers: [
+                        { type: 'chat', config: { require_auth: false } },
+                        trigger({ mention_only: true, auto_resume_threads: true }),
+                    ],
+                    auth: { modes: [{ type: 'public', acknowledge_public_exposure: true }] },
+                },
+                encrypted_env: SLACK_ENV,
+            })
+            const first = await c.slackPost(
+                'thread-resume',
+                'events',
+                slackEvent({ eventType: 'app_mention', text: '<@U0BOT> kick off', ts: '100.0' }),
+                SLACK_SECRET
+            )
+            expect(first.status).toBe(200)
+            expect(first.body.session_id).toBeTruthy()
+            await c.drain()
+
+            // Same thread (thread_ts === first.ts), plain message.
+            const second = await c.slackPost(
+                'thread-resume',
+                'events',
+                slackEvent({
+                    eventType: 'message',
+                    text: 'follow-up without a mention',
+                    ts: '101.0',
+                    thread_ts: '100.0',
+                }),
+                SLACK_SECRET
+            )
+            expect(second.status).toBe(200)
+            expect(second.body.session_id).toBe(first.body.session_id)
+            expect(second.body.resumed).toBe(true)
+            expect(second.body.dropped).toBeUndefined()
+            await c.drain()
+            // Seed for the resumed turn should flag mention=false.
+            const session = await c.queue.get(first.body.session_id)
+            const userTurns = session!.conversation.filter((m) => m.role === 'user') as Array<{
+                role: 'user'
+                content: string
+            }>
+            expect(userTurns).toHaveLength(2)
+            expect(userTurns[0].content).toContain('mention: true')
+            expect(userTurns[1].content).toContain('mention: false')
+            expect(userTurns[1].content).toContain('resumed_owned_thread: true')
+        })
+
+        it('mention_only=true + auto_resume_threads=true: non-mention reply DROPPED when thread has no owned session', async () => {
+            // The gate must not turn into "accept any message that has a
+            // thread_ts" — only threads the bot already owns get through.
+            await c.deployAgent({
+                slug: 'thread-resume-strict',
+                spec: {
+                    triggers: [
+                        { type: 'chat', config: { require_auth: false } },
+                        trigger({ mention_only: true, auto_resume_threads: true }),
+                    ],
+                    auth: { modes: [{ type: 'public', acknowledge_public_exposure: true }] },
+                },
+                encrypted_env: SLACK_ENV,
+            })
+            const res = await c.slackPost(
+                'thread-resume-strict',
+                'events',
+                slackEvent({
+                    eventType: 'message',
+                    text: 'two humans in a thread the bot has never seen',
+                    ts: '200.1',
+                    thread_ts: '200.0',
+                }),
+                SLACK_SECRET
+            )
+            expect(res.status).toBe(200)
+            expect(res.body.dropped).toBe('mention_only_no_owned_thread')
+            expect(res.body.session_id).toBeUndefined()
+        })
+    })
+
+    describe('ack_reaction', () => {
+        /** Tests need their own cluster + http recorder so we can intercept
+         *  the fire-and-forget `reactions.add` call before it hits slack.com.
+         *  The outer harness's default HttpClient hits the real wire — fine
+         *  for tests that don't care, but the ack flow specifically needs
+         *  to be intercepted to be assertable. */
+        async function ackCluster(): Promise<{
+            cc: Cluster
+            slackCalls: Array<{ url: string; body: Record<string, unknown> }>
+            failNext: (status?: number) => void
+        }> {
+            const slackCalls: Array<{ url: string; body: Record<string, unknown> }> = []
+            let nextFailStatus: number | null = null
+            const recorder = {
+                fetch: (input: string | URL, init?: RequestInit): Promise<Response> => {
+                    const url = typeof input === 'string' ? input : input.toString()
+                    if (url.includes('slack.com/api/')) {
+                        slackCalls.push({
+                            url,
+                            body: typeof init?.body === 'string' ? JSON.parse(init.body) : {},
+                        })
+                        if (nextFailStatus != null) {
+                            const status = nextFailStatus
+                            nextFailStatus = null
+                            return Promise.resolve({
+                                ok: status >= 200 && status < 300,
+                                status,
+                                json: async () => ({ ok: false, error: 'simulated_failure' }),
+                                text: async () => '{"ok":false,"error":"simulated_failure"}',
+                            } as unknown as Response)
+                        }
+                        return Promise.resolve({
+                            ok: true,
+                            status: 200,
+                            json: async () => ({ ok: true }),
+                            text: async () => '{"ok":true}',
+                        } as unknown as Response)
+                    }
+                    return Promise.reject(new Error(`unexpected fetch in test: ${url}`))
+                },
+            }
+            const cc = await buildCluster({ http: recorder })
+            return {
+                cc,
+                slackCalls,
+                failNext: (status = 500) => {
+                    nextFailStatus = status
+                },
+            }
+        }
+
+        it('fires reactions.add with the configured emoji on app_mention, with bot-token bearer auth', async () => {
+            const { cc, slackCalls } = await ackCluster()
+            try {
+                await cc.deployAgent({
+                    slug: 'acker',
+                    spec: {
+                        triggers: [
+                            { type: 'chat', config: { require_auth: false } },
+                            {
+                                type: 'slack',
+                                config: {
+                                    mention_only: false,
+                                    auto_resume_threads: false,
+                                    ack_reaction: 'eyes',
+                                    trusted_workspaces: '*',
+                                },
+                            },
+                        ],
+                        auth: { modes: [{ type: 'public', acknowledge_public_exposure: true }] },
+                    },
+                    encrypted_env: { ...SLACK_ENV, SLACK_BOT_TOKEN: 'xoxb-acker' },
+                })
+                cc.setScript([fauxText('done')])
+                const res = await cc.slackPost(
+                    'acker',
+                    'events',
+                    slackEvent({ eventType: 'app_mention', text: '<@U0BOT> hi', ts: '300.0' }),
+                    SLACK_SECRET
+                )
+                expect(res.status).toBe(200)
+                expect(res.body.session_id).toBeTruthy()
+                // Reaction is fire-and-forget; let the microtask queue drain.
+                await new Promise((r) => setTimeout(r, 50))
+                const reactionCalls = slackCalls.filter((c) => c.url.endsWith('reactions.add'))
+                expect(reactionCalls).toHaveLength(1)
+                expect(reactionCalls[0].body).toMatchObject({
+                    channel: 'C01',
+                    timestamp: '300.0',
+                    name: 'eyes',
+                })
+            } finally {
+                await cc.teardown()
+            }
+        })
+
+        it('no reaction posted when ack_reaction is unset (default)', async () => {
+            const { cc, slackCalls } = await ackCluster()
+            try {
+                await cc.deployAgent({
+                    slug: 'silent',
+                    spec: {
+                        triggers: [
+                            { type: 'chat', config: { require_auth: false } },
+                            {
+                                type: 'slack',
+                                config: {
+                                    mention_only: false,
+                                    auto_resume_threads: false,
+                                    trusted_workspaces: '*',
+                                },
+                            },
+                        ],
+                        auth: { modes: [{ type: 'public', acknowledge_public_exposure: true }] },
+                    },
+                    encrypted_env: { ...SLACK_ENV, SLACK_BOT_TOKEN: 'xoxb-silent' },
+                })
+                cc.setScript([fauxText('done')])
+                const res = await cc.slackPost(
+                    'silent',
+                    'events',
+                    slackEvent({ eventType: 'app_mention', text: '<@U0BOT> hi' }),
+                    SLACK_SECRET
+                )
+                expect(res.status).toBe(200)
+                await new Promise((r) => setTimeout(r, 50))
+                expect(slackCalls.filter((c) => c.url.endsWith('reactions.add'))).toHaveLength(0)
+            } finally {
+                await cc.teardown()
+            }
+        })
+
+        it('fails open: slack returning 500 does not break the event handler', async () => {
+            const { cc, slackCalls, failNext } = await ackCluster()
+            try {
+                await cc.deployAgent({
+                    slug: 'resilient',
+                    spec: {
+                        triggers: [
+                            { type: 'chat', config: { require_auth: false } },
+                            {
+                                type: 'slack',
+                                config: {
+                                    mention_only: false,
+                                    auto_resume_threads: false,
+                                    ack_reaction: 'thinking_face',
+                                    trusted_workspaces: '*',
+                                },
+                            },
+                        ],
+                        auth: { modes: [{ type: 'public', acknowledge_public_exposure: true }] },
+                    },
+                    encrypted_env: { ...SLACK_ENV, SLACK_BOT_TOKEN: 'xoxb-resilient' },
+                })
+                cc.setScript([fauxText('done')])
+                failNext(500)
+                const res = await cc.slackPost(
+                    'resilient',
+                    'events',
+                    slackEvent({ eventType: 'app_mention', text: '<@U0BOT> hi' }),
+                    SLACK_SECRET
+                )
+                expect(res.status).toBe(200)
+                expect(res.body.session_id).toBeTruthy()
+                await new Promise((r) => setTimeout(r, 50))
+                expect(slackCalls.filter((c) => c.url.endsWith('reactions.add'))).toHaveLength(1)
+            } finally {
+                await cc.teardown()
+            }
+        })
+
+        it('no reaction posted when SLACK_BOT_TOKEN is unset (fail open, no crash)', async () => {
+            const { cc, slackCalls } = await ackCluster()
+            try {
+                await cc.deployAgent({
+                    slug: 'tokenless',
+                    spec: {
+                        triggers: [
+                            { type: 'chat', config: { require_auth: false } },
+                            {
+                                type: 'slack',
+                                config: {
+                                    mention_only: false,
+                                    auto_resume_threads: false,
+                                    ack_reaction: 'eyes',
+                                    trusted_workspaces: '*',
+                                },
+                            },
+                        ],
+                        auth: { modes: [{ type: 'public', acknowledge_public_exposure: true }] },
+                    },
+                    encrypted_env: SLACK_ENV, // signing secret only — no SLACK_BOT_TOKEN
+                })
+                cc.setScript([fauxText('done')])
+                const res = await cc.slackPost(
+                    'tokenless',
+                    'events',
+                    slackEvent({ eventType: 'app_mention', text: '<@U0BOT> hi' }),
+                    SLACK_SECRET
+                )
+                expect(res.status).toBe(200)
+                expect(res.body.session_id).toBeTruthy()
+                await new Promise((r) => setTimeout(r, 50))
+                expect(slackCalls.filter((c) => c.url.endsWith('reactions.add'))).toHaveLength(0)
+            } finally {
+                await cc.teardown()
+            }
+        })
+    })
+
+    describe('allow_workspace_participants', () => {
+        /** Same http-recorder pattern as ack_reaction: the owner-only rejection
+         *  reply posts chat.postMessage, which we intercept to assert on. */
+        async function recorderCluster(): Promise<{
+            cc: Cluster
+            slackCalls: Array<{ url: string; body: Record<string, unknown> }>
+        }> {
+            const slackCalls: Array<{ url: string; body: Record<string, unknown> }> = []
+            const recorder = {
+                fetch: (input: string | URL, init?: RequestInit): Promise<Response> => {
+                    const url = typeof input === 'string' ? input : input.toString()
+                    if (url.includes('slack.com/api/')) {
+                        slackCalls.push({
+                            url,
+                            body: typeof init?.body === 'string' ? JSON.parse(init.body) : {},
+                        })
+                        return Promise.resolve({
+                            ok: true,
+                            status: 200,
+                            json: async () => ({ ok: true, ts: '0.1', channel: 'C01' }),
+                            text: async () => '{"ok":true}',
+                        } as unknown as Response)
+                    }
+                    return Promise.reject(new Error(`unexpected fetch in test: ${url}`))
+                },
+            }
+            const cc = await buildCluster({ http: recorder })
+            return { cc, slackCalls }
+        }
+
+        function ownerThreadSpec(allow: boolean): Record<string, unknown> {
+            return {
+                triggers: [
+                    {
+                        type: 'slack',
+                        config: {
+                            mention_only: true,
+                            auto_resume_threads: true,
+                            allow_workspace_participants: allow,
+                            trusted_workspaces: '*',
+                        },
+                    },
+                ],
+                auth: { modes: [{ type: 'public', acknowledge_public_exposure: true }] },
+            }
+        }
+
+        it('default (owner-only): a non-owner reply is rejected AND gets an in-thread explanation', async () => {
+            const { cc, slackCalls } = await recorderCluster()
+            try {
+                cc.setScript([fauxText('alice first')])
+                await cc.deployAgent({
+                    slug: 'owner-only',
+                    spec: ownerThreadSpec(false),
+                    encrypted_env: { ...SLACK_ENV, SLACK_BOT_TOKEN: 'xoxb-owner-only' },
+                })
+                const first = await cc.slackPost(
+                    'owner-only',
+                    'events',
+                    slackEvent({ eventType: 'app_mention', user: 'U-ALICE', text: '<@U0BOT> open', ts: '500.0' }),
+                    SLACK_SECRET
+                )
+                expect(first.body.session_id).toBeTruthy()
+                await cc.drain()
+
+                const second = await cc.slackPost(
+                    'owner-only',
+                    'events',
+                    slackEvent({
+                        eventType: 'message',
+                        user: 'U-BOB',
+                        text: 'bob barges in',
+                        ts: '501.0',
+                        thread_ts: '500.0',
+                    }),
+                    SLACK_SECRET
+                )
+                expect(second.body.elevation_required).toBe(true)
+                expect(second.body.resumed).toBe(false)
+                // Bob's message must not reach the runner.
+                const session = await cc.queue.get(first.body.session_id)
+                expect(session!.pending_inputs).toHaveLength(0)
+                // But Bob is told why, in the thread.
+                const postCalls = slackCalls.filter((c) => c.url.endsWith('chat.postMessage'))
+                expect(postCalls).toHaveLength(1)
+                expect(postCalls[0].body).toMatchObject({ channel: 'C01', thread_ts: '500.0' })
+                expect(String(postCalls[0].body.text)).toContain('started this thread')
+            } finally {
+                await cc.teardown()
+            }
+        })
+
+        it('allow_workspace_participants=true: a non-owner advances the same thread (no elevation, no rejection reply)', async () => {
+            const { cc, slackCalls } = await recorderCluster()
+            try {
+                cc.setScript([fauxText('alice first'), fauxText('reply to bob')])
+                await cc.deployAgent({
+                    slug: 'open-thread',
+                    spec: ownerThreadSpec(true),
+                    encrypted_env: { ...SLACK_ENV, SLACK_BOT_TOKEN: 'xoxb-open' },
+                })
+                const first = await cc.slackPost(
+                    'open-thread',
+                    'events',
+                    slackEvent({ eventType: 'app_mention', user: 'U-ALICE', text: '<@U0BOT> open', ts: '600.0' }),
+                    SLACK_SECRET
+                )
+                await cc.drain()
+
+                const second = await cc.slackPost(
+                    'open-thread',
+                    'events',
+                    slackEvent({
+                        eventType: 'message',
+                        user: 'U-BOB',
+                        text: 'bob joins in',
+                        ts: '601.0',
+                        thread_ts: '600.0',
+                    }),
+                    SLACK_SECRET
+                )
+                expect(second.body.session_id).toBe(first.body.session_id)
+                expect(second.body.resumed).toBe(true)
+                expect(second.body.elevation_required).toBeUndefined()
+                await cc.drain()
+
+                const session = await cc.queue.get(first.body.session_id)
+                const userTurns = session!.conversation.filter((m) => m.role === 'user') as Array<{
+                    role: 'user'
+                    content: string
+                    sender?: { kind: string; slack_user_id?: string }
+                }>
+                expect(userTurns).toHaveLength(2)
+                expect(userTurns[1].content).toContain('bob joins in')
+                // The real sender is preserved for audit even though the session
+                // is owned by Alice.
+                expect(userTurns[1].sender).toMatchObject({ kind: 'slack', slack_user_id: 'U-BOB' })
+                // No rejection reply when the thread is open to the workspace.
+                expect(slackCalls.filter((c) => c.url.endsWith('chat.postMessage'))).toHaveLength(0)
             } finally {
                 await cc.teardown()
             }

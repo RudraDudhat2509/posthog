@@ -23,18 +23,13 @@ import type {
     AgentApplicationsPreviewProxyGetParams,
     AgentApplicationsPreviewProxyParams,
     AgentApplicationsPreviewTokenParams,
-    AgentApplicationsRevisionsFileDestroyParams,
-    AgentApplicationsRevisionsFileRetrieveParams,
-    AgentApplicationsRevisionsFileUpdateParams,
     AgentApplicationsRevisionsListParams,
     AgentApplicationsSessionLogsParams,
     AgentApplicationsSessionsListParams,
     AgentApplicationsSessionsRetrieveParams,
     AgentApplicationsStatsParams,
     AgentApprovalsDecideResponseApi,
-    AgentCustomToolTemplatesListParams,
-    AgentCustomToolTemplatesNameRetrieveParams,
-    AgentCustomToolTemplatesNameUsagesListParams,
+    AgentFleetApprovalsListParams,
     AgentFleetLiveSessionsParams,
     AgentFleetLiveSessionsResponseApi,
     AgentFleetStatsParams,
@@ -53,20 +48,12 @@ import type {
     AgentRevisionApi,
     AgentRevisionCronFireRequestApi,
     AgentRevisionCronFireResponseApi,
+    AgentRevisionSlackManifestResponseApi,
     AgentRevisionSystemPromptResponseApi,
     AgentRevisionValidateResponseApi,
-    AgentSkillTemplatesListParams,
-    AgentSkillTemplatesNameRetrieveParams,
-    AgentSkillTemplatesNameUsagesListParams,
     AgentTableRowsResponseApi,
     AgentTablesListResponseApi,
     CloneFromRequestApi,
-    CustomToolTemplateCreateApi,
-    CustomToolTemplateDetailApi,
-    CustomToolTemplateDuplicateApi,
-    CustomToolTemplatePublishApi,
-    CustomToolTemplateSummaryApi,
-    CustomToolTemplateUsageApi,
     DecideApprovalRequestApi,
     NewDraftRevisionRequestApi,
     PaginatedAgentApplicationListApi,
@@ -77,18 +64,11 @@ import type {
     PreviewProxyInvokeRequestApi,
     SetEnvKeyRequestApi,
     SetEnvRequestApi,
-    SkillTemplateCreateApi,
-    SkillTemplateDetailApi,
-    SkillTemplateDuplicateApi,
-    SkillTemplateFileApi,
-    SkillTemplateFileRenameApi,
-    SkillTemplateFileWriteApi,
-    SkillTemplatePublishApi,
-    SkillTemplateSummaryApi,
-    SkillTemplateUsageApi,
-    TemplateVersionEntryApi,
-    WriteBundleRequestApi,
-    WriteFileRequestApi,
+    WriteAgentMdRequestApi,
+    WriteSkillRequestApi,
+    WriteSpecRequestApi,
+    WriteToolRequestApi,
+    WriteTypedBundleRequestApi,
 } from './api.schemas'
 
 // https://stackoverflow.com/questions/49579094/typescript-conditional-types-filter-out-readonly-properties-pick-only-requir/49579497#49579497
@@ -712,6 +692,52 @@ export const agentApplicationsRevisionsDestroy = async (
     })
 }
 
+export const getAgentApplicationsRevisionsAgentMdUpdateUrl = (projectId: string, applicationId: string, id: string) => {
+    return `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/agent_md/`
+}
+
+/**
+ * Revisions of an agent. Created in `draft`, promoted through
+`ready → live` once the bundle has been uploaded + frozen.
+
+URLs (nested under an application):
+
+    Model CRUD:
+        GET   .../revisions/                       list
+        POST  .../revisions/                       create draft
+        GET   .../revisions/<id>/                  retrieve
+        PATCH .../revisions/<id>/                  update spec (draft only)
+
+    Lifecycle:
+        POST  .../revisions/<id>/promote/          ready → live
+        POST  .../revisions/<id>/archive/          → archived
+        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+        POST  .../revisions/new_draft/             create draft + clone_from atomically
+
+    Bundle authoring (proxied to the janitor):
+        GET    .../revisions/<id>/manifest/        list paths + sha256
+        GET    .../revisions/<id>/file/?path=…     read one file
+        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+        GET    .../revisions/<id>/bundle/          bulk pull all files
+        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ */
+export const agentApplicationsRevisionsAgentMdUpdate = async (
+    projectId: string,
+    applicationId: string,
+    id: string,
+    writeAgentMdRequestApi: WriteAgentMdRequestApi,
+    options?: RequestInit
+): Promise<AgentRevisionApi> => {
+    return apiMutator<AgentRevisionApi>(getAgentApplicationsRevisionsAgentMdUpdateUrl(projectId, applicationId, id), {
+        ...options,
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(writeAgentMdRequestApi),
+    })
+}
+
 export const getAgentApplicationsRevisionsArchiveCreateUrl = (projectId: string, applicationId: string, id: string) => {
     return `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/archive/`
 }
@@ -742,8 +768,7 @@ export const getAgentApplicationsRevisionsBundleRetrieveUrl = (
 }
 
 /**
- * Bulk-pull: returns `{ files: { path: content, ... }, ... }`. Use
-this when the MCP wants the whole bundle to work on locally.
+ * Read the full typed bundle: `{ agent_md, skills, tools, spec }`.
  */
 export const agentApplicationsRevisionsBundleRetrieve = async (
     projectId: string,
@@ -762,20 +787,22 @@ export const getAgentApplicationsRevisionsBundleUpdateUrl = (projectId: string, 
 }
 
 /**
- * Bulk-push the bundle. Body `{ files, mode: replace|merge }`.
+ * Full-replace the typed bundle. Anything not in the payload is
+deleted. Tool sources are AST-checked + esbuild-compiled by the
+janitor before any S3 writes.
  */
 export const agentApplicationsRevisionsBundleUpdate = async (
     projectId: string,
     applicationId: string,
     id: string,
-    writeBundleRequestApi: WriteBundleRequestApi,
+    writeTypedBundleRequestApi: WriteTypedBundleRequestApi,
     options?: RequestInit
 ): Promise<AgentRevisionApi> => {
     return apiMutator<AgentRevisionApi>(getAgentApplicationsRevisionsBundleUpdateUrl(projectId, applicationId, id), {
         ...options,
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...options?.headers },
-        body: JSON.stringify(writeBundleRequestApi),
+        body: JSON.stringify(writeTypedBundleRequestApi),
     })
 }
 
@@ -842,126 +869,6 @@ export const agentApplicationsRevisionsCronFireCreate = async (
     )
 }
 
-export const getAgentApplicationsRevisionsFileRetrieveUrl = (
-    projectId: string,
-    applicationId: string,
-    id: string,
-    params: AgentApplicationsRevisionsFileRetrieveParams
-) => {
-    const normalizedParams = new URLSearchParams()
-
-    Object.entries(params || {}).forEach(([key, value]) => {
-        if (value !== undefined) {
-            normalizedParams.append(key, value === null ? 'null' : value.toString())
-        }
-    })
-
-    const stringifiedParams = normalizedParams.toString()
-
-    return stringifiedParams.length > 0
-        ? `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/file/?${stringifiedParams}`
-        : `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/file/`
-}
-
-/**
- * Read one file by `?path=...`. Works on any revision state.
- */
-export const agentApplicationsRevisionsFileRetrieve = async (
-    projectId: string,
-    applicationId: string,
-    id: string,
-    params: AgentApplicationsRevisionsFileRetrieveParams,
-    options?: RequestInit
-): Promise<AgentRevisionApi> => {
-    return apiMutator<AgentRevisionApi>(
-        getAgentApplicationsRevisionsFileRetrieveUrl(projectId, applicationId, id, params),
-        {
-            ...options,
-            method: 'GET',
-        }
-    )
-}
-
-export const getAgentApplicationsRevisionsFileUpdateUrl = (
-    projectId: string,
-    applicationId: string,
-    id: string,
-    params: AgentApplicationsRevisionsFileUpdateParams
-) => {
-    const normalizedParams = new URLSearchParams()
-
-    Object.entries(params || {}).forEach(([key, value]) => {
-        if (value !== undefined) {
-            normalizedParams.append(key, value === null ? 'null' : value.toString())
-        }
-    })
-
-    const stringifiedParams = normalizedParams.toString()
-
-    return stringifiedParams.length > 0
-        ? `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/file/?${stringifiedParams}`
-        : `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/file/`
-}
-
-/**
- * Write one file by `?path=...`. Draft-only (janitor enforces).
- */
-export const agentApplicationsRevisionsFileUpdate = async (
-    projectId: string,
-    applicationId: string,
-    id: string,
-    writeFileRequestApi: WriteFileRequestApi,
-    params: AgentApplicationsRevisionsFileUpdateParams,
-    options?: RequestInit
-): Promise<AgentRevisionApi> => {
-    return apiMutator<AgentRevisionApi>(
-        getAgentApplicationsRevisionsFileUpdateUrl(projectId, applicationId, id, params),
-        {
-            ...options,
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', ...options?.headers },
-            body: JSON.stringify(writeFileRequestApi),
-        }
-    )
-}
-
-export const getAgentApplicationsRevisionsFileDestroyUrl = (
-    projectId: string,
-    applicationId: string,
-    id: string,
-    params: AgentApplicationsRevisionsFileDestroyParams
-) => {
-    const normalizedParams = new URLSearchParams()
-
-    Object.entries(params || {}).forEach(([key, value]) => {
-        if (value !== undefined) {
-            normalizedParams.append(key, value === null ? 'null' : value.toString())
-        }
-    })
-
-    const stringifiedParams = normalizedParams.toString()
-
-    return stringifiedParams.length > 0
-        ? `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/file/?${stringifiedParams}`
-        : `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/file/`
-}
-
-/**
- * Delete one file by `?path=...`. Draft-only.
- */
-export const agentApplicationsRevisionsFileDestroy = async (
-    projectId: string,
-    applicationId: string,
-    id: string,
-    params: AgentApplicationsRevisionsFileDestroyParams,
-    options?: RequestInit
-): Promise<void> => {
-    return apiMutator<void>(getAgentApplicationsRevisionsFileDestroyUrl(projectId, applicationId, id, params), {
-        ...options,
-        method: 'DELETE',
-    })
-}
-
 export const getAgentApplicationsRevisionsFreezeCreateUrl = (projectId: string, applicationId: string, id: string) => {
     return `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/freeze/`
 }
@@ -969,17 +876,16 @@ export const getAgentApplicationsRevisionsFreezeCreateUrl = (projectId: string, 
 /**
  * Freeze the bundle: draft → ready, stamps sha256 on the row.
 
-Single atomic block now that the janitor's freeze endpoint is
-side-effect-free w.r.t. `agent_revision`: (1) resolve
-`spec.skills[].from_template` / `spec.tools[].from_template` refs
-into the bundle (copies content, stamps versions, inserts join
-rows); (2) call the janitor to compute the bundle sha (writes the
-S3 `.frozen` marker, returns the sha); (3) stamp `state='ready'`
-+ `bundle_sha256` on the revision row from Django. Django is the
-sole writer to `agent_revision.state`, so there's no cross-process
-row contention on the same row to deadlock against. Any failure
-leaves the revision in `draft`; the next freeze re-runs all three
-phases idempotently.
+Django is a thin proxy here: resolve template refs into the
+bundle, ask the janitor to seal it (the janitor returns the sha
++ the spec it derived from the typed resources), then stamp the
+row. No `transaction.atomic()` — the janitor's freeze is idempotent
+(on retry it re-reads the existing `.frozen` marker + re-derives
+spec), so a partial failure here is recoverable by re-calling
+freeze, not by transactional rollback. Holding an atomic block
+across the janitor HTTP call previously deadlocked the
+agent_revision row against the janitor's spec write — that's
+moved off the janitor side as part of the same fix.
  */
 export const agentApplicationsRevisionsFreezeCreate = async (
     projectId: string,
@@ -1038,6 +944,184 @@ export const agentApplicationsRevisionsPromoteCreate = async (
     })
 }
 
+export const getAgentApplicationsRevisionsSkillsUpdateUrl = (
+    projectId: string,
+    applicationId: string,
+    id: string,
+    skillId: string
+) => {
+    return `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/skills/${skillId}/`
+}
+
+/**
+ * Revisions of an agent. Created in `draft`, promoted through
+`ready → live` once the bundle has been uploaded + frozen.
+
+URLs (nested under an application):
+
+    Model CRUD:
+        GET   .../revisions/                       list
+        POST  .../revisions/                       create draft
+        GET   .../revisions/<id>/                  retrieve
+        PATCH .../revisions/<id>/                  update spec (draft only)
+
+    Lifecycle:
+        POST  .../revisions/<id>/promote/          ready → live
+        POST  .../revisions/<id>/archive/          → archived
+        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+        POST  .../revisions/new_draft/             create draft + clone_from atomically
+
+    Bundle authoring (proxied to the janitor):
+        GET    .../revisions/<id>/manifest/        list paths + sha256
+        GET    .../revisions/<id>/file/?path=…     read one file
+        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+        GET    .../revisions/<id>/bundle/          bulk pull all files
+        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ */
+export const agentApplicationsRevisionsSkillsUpdate = async (
+    projectId: string,
+    applicationId: string,
+    id: string,
+    skillId: string,
+    writeSkillRequestApi: WriteSkillRequestApi,
+    options?: RequestInit
+): Promise<AgentRevisionApi> => {
+    return apiMutator<AgentRevisionApi>(
+        getAgentApplicationsRevisionsSkillsUpdateUrl(projectId, applicationId, id, skillId),
+        {
+            ...options,
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...options?.headers },
+            body: JSON.stringify(writeSkillRequestApi),
+        }
+    )
+}
+
+export const getAgentApplicationsRevisionsSkillsDestroyUrl = (
+    projectId: string,
+    applicationId: string,
+    id: string,
+    skillId: string
+) => {
+    return `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/skills/${skillId}/`
+}
+
+/**
+ * Revisions of an agent. Created in `draft`, promoted through
+`ready → live` once the bundle has been uploaded + frozen.
+
+URLs (nested under an application):
+
+    Model CRUD:
+        GET   .../revisions/                       list
+        POST  .../revisions/                       create draft
+        GET   .../revisions/<id>/                  retrieve
+        PATCH .../revisions/<id>/                  update spec (draft only)
+
+    Lifecycle:
+        POST  .../revisions/<id>/promote/          ready → live
+        POST  .../revisions/<id>/archive/          → archived
+        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+        POST  .../revisions/new_draft/             create draft + clone_from atomically
+
+    Bundle authoring (proxied to the janitor):
+        GET    .../revisions/<id>/manifest/        list paths + sha256
+        GET    .../revisions/<id>/file/?path=…     read one file
+        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+        GET    .../revisions/<id>/bundle/          bulk pull all files
+        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ */
+export const agentApplicationsRevisionsSkillsDestroy = async (
+    projectId: string,
+    applicationId: string,
+    id: string,
+    skillId: string,
+    options?: RequestInit
+): Promise<void> => {
+    return apiMutator<void>(getAgentApplicationsRevisionsSkillsDestroyUrl(projectId, applicationId, id, skillId), {
+        ...options,
+        method: 'DELETE',
+    })
+}
+
+export const getAgentApplicationsRevisionsSlackManifestUrl = (projectId: string, applicationId: string, id: string) => {
+    return `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/slack_manifest/`
+}
+
+/**
+ * Build a Slack app manifest for this revision's slack trigger.
+
+Deterministic: the OAuth scopes and bot event subscriptions are derived
+from the slack trigger config (`mention_only` / `auto_resume_threads` /
+`ack_reaction`) and the agent's Slack tools, so the manifest already
+subscribes to exactly the events the config needs. 400 if the revision
+has no slack trigger.
+ */
+export const agentApplicationsRevisionsSlackManifest = async (
+    projectId: string,
+    applicationId: string,
+    id: string,
+    options?: RequestInit
+): Promise<AgentRevisionSlackManifestResponseApi> => {
+    return apiMutator<AgentRevisionSlackManifestResponseApi>(
+        getAgentApplicationsRevisionsSlackManifestUrl(projectId, applicationId, id),
+        {
+            ...options,
+            method: 'GET',
+        }
+    )
+}
+
+export const getAgentApplicationsRevisionsSpecUpdateUrl = (projectId: string, applicationId: string, id: string) => {
+    return `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/spec/`
+}
+
+/**
+ * Revisions of an agent. Created in `draft`, promoted through
+`ready → live` once the bundle has been uploaded + frozen.
+
+URLs (nested under an application):
+
+    Model CRUD:
+        GET   .../revisions/                       list
+        POST  .../revisions/                       create draft
+        GET   .../revisions/<id>/                  retrieve
+        PATCH .../revisions/<id>/                  update spec (draft only)
+
+    Lifecycle:
+        POST  .../revisions/<id>/promote/          ready → live
+        POST  .../revisions/<id>/archive/          → archived
+        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+        POST  .../revisions/new_draft/             create draft + clone_from atomically
+
+    Bundle authoring (proxied to the janitor):
+        GET    .../revisions/<id>/manifest/        list paths + sha256
+        GET    .../revisions/<id>/file/?path=…     read one file
+        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+        GET    .../revisions/<id>/bundle/          bulk pull all files
+        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ */
+export const agentApplicationsRevisionsSpecUpdate = async (
+    projectId: string,
+    applicationId: string,
+    id: string,
+    writeSpecRequestApi: WriteSpecRequestApi,
+    options?: RequestInit
+): Promise<AgentRevisionApi> => {
+    return apiMutator<AgentRevisionApi>(getAgentApplicationsRevisionsSpecUpdateUrl(projectId, applicationId, id), {
+        ...options,
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(writeSpecRequestApi),
+    })
+}
+
 export const getAgentApplicationsRevisionsSystemPromptUrl = (projectId: string, applicationId: string, id: string) => {
     return `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/system_prompt/`
 }
@@ -1064,6 +1148,110 @@ export const agentApplicationsRevisionsSystemPrompt = async (
             method: 'GET',
         }
     )
+}
+
+export const getAgentApplicationsRevisionsToolsUpdateUrl = (
+    projectId: string,
+    applicationId: string,
+    id: string,
+    toolId: string
+) => {
+    return `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/tools/${toolId}/`
+}
+
+/**
+ * Revisions of an agent. Created in `draft`, promoted through
+`ready → live` once the bundle has been uploaded + frozen.
+
+URLs (nested under an application):
+
+    Model CRUD:
+        GET   .../revisions/                       list
+        POST  .../revisions/                       create draft
+        GET   .../revisions/<id>/                  retrieve
+        PATCH .../revisions/<id>/                  update spec (draft only)
+
+    Lifecycle:
+        POST  .../revisions/<id>/promote/          ready → live
+        POST  .../revisions/<id>/archive/          → archived
+        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+        POST  .../revisions/new_draft/             create draft + clone_from atomically
+
+    Bundle authoring (proxied to the janitor):
+        GET    .../revisions/<id>/manifest/        list paths + sha256
+        GET    .../revisions/<id>/file/?path=…     read one file
+        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+        GET    .../revisions/<id>/bundle/          bulk pull all files
+        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ */
+export const agentApplicationsRevisionsToolsUpdate = async (
+    projectId: string,
+    applicationId: string,
+    id: string,
+    toolId: string,
+    writeToolRequestApi: WriteToolRequestApi,
+    options?: RequestInit
+): Promise<AgentRevisionApi> => {
+    return apiMutator<AgentRevisionApi>(
+        getAgentApplicationsRevisionsToolsUpdateUrl(projectId, applicationId, id, toolId),
+        {
+            ...options,
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...options?.headers },
+            body: JSON.stringify(writeToolRequestApi),
+        }
+    )
+}
+
+export const getAgentApplicationsRevisionsToolsDestroyUrl = (
+    projectId: string,
+    applicationId: string,
+    id: string,
+    toolId: string
+) => {
+    return `/api/projects/${projectId}/agent_applications/${applicationId}/revisions/${id}/tools/${toolId}/`
+}
+
+/**
+ * Revisions of an agent. Created in `draft`, promoted through
+`ready → live` once the bundle has been uploaded + frozen.
+
+URLs (nested under an application):
+
+    Model CRUD:
+        GET   .../revisions/                       list
+        POST  .../revisions/                       create draft
+        GET   .../revisions/<id>/                  retrieve
+        PATCH .../revisions/<id>/                  update spec (draft only)
+
+    Lifecycle:
+        POST  .../revisions/<id>/promote/          ready → live
+        POST  .../revisions/<id>/archive/          → archived
+        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+        POST  .../revisions/new_draft/             create draft + clone_from atomically
+
+    Bundle authoring (proxied to the janitor):
+        GET    .../revisions/<id>/manifest/        list paths + sha256
+        GET    .../revisions/<id>/file/?path=…     read one file
+        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+        GET    .../revisions/<id>/bundle/          bulk pull all files
+        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ */
+export const agentApplicationsRevisionsToolsDestroy = async (
+    projectId: string,
+    applicationId: string,
+    id: string,
+    toolId: string,
+    options?: RequestInit
+): Promise<void> => {
+    return apiMutator<void>(getAgentApplicationsRevisionsToolsDestroyUrl(projectId, applicationId, id, toolId), {
+        ...options,
+        method: 'DELETE',
+    })
 }
 
 export const getAgentApplicationsRevisionsValidateCreateUrl = (
@@ -1545,6 +1733,13 @@ directly via the public ingress URL. The caller attaches it as
 the `x-agent-preview-token` header (or `?preview_token=` query
 param for `EventSource`). See `_mint_preview_jwt` for the
 payload + claim binding.
+
+The response also includes `endpoints`, `auth`, and
+`preview_proxy` blocks so the caller can wire a preview
+invocation without grepping the agent-ingress source for which
+path each trigger exposes or which header name carries the
+token. This is the "self-describing" half of preview-mode —
+every piece of info you need to hit ingress is in one response.
  */
 export const agentApplicationsPreviewToken = async (
     projectId: string,
@@ -1746,7 +1941,7 @@ export const agentApplicationsStats = async (
     })
 }
 
-export const getAgentCustomToolTemplatesListUrl = (projectId: string, params?: AgentCustomToolTemplatesListParams) => {
+export const getAgentFleetApprovalsListUrl = (projectId: string, params?: AgentFleetApprovalsListParams) => {
     const normalizedParams = new URLSearchParams()
 
     Object.entries(params || {}).forEach(([key, value]) => {
@@ -1758,284 +1953,19 @@ export const getAgentCustomToolTemplatesListUrl = (projectId: string, params?: A
     const stringifiedParams = normalizedParams.toString()
 
     return stringifiedParams.length > 0
-        ? `/api/projects/${projectId}/agent_custom_tool_templates/?${stringifiedParams}`
-        : `/api/projects/${projectId}/agent_custom_tool_templates/`
+        ? `/api/projects/${projectId}/agent_fleet/approvals/?${stringifiedParams}`
+        : `/api/projects/${projectId}/agent_fleet/approvals/`
 }
 
 /**
- * Shared, versioned TypeScript custom tool templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_custom_tool_templates/
-    POST   /api/projects/<team>/agent_custom_tool_templates/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/usages/
- * @summary List the latest version of every custom tool template visible to the team.
+ * Approval-gated tool requests across every agent in this team. Team-admin only.
  */
-export const agentCustomToolTemplatesList = async (
+export const agentFleetApprovalsList = async (
     projectId: string,
-    params?: AgentCustomToolTemplatesListParams,
-    options?: RequestInit
-): Promise<CustomToolTemplateSummaryApi[]> => {
-    return apiMutator<CustomToolTemplateSummaryApi[]>(getAgentCustomToolTemplatesListUrl(projectId, params), {
-        ...options,
-        method: 'GET',
-    })
-}
-
-export const getAgentCustomToolTemplatesCreateUrl = (projectId: string) => {
-    return `/api/projects/${projectId}/agent_custom_tool_templates/`
-}
-
-/**
- * Shared, versioned TypeScript custom tool templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_custom_tool_templates/
-    POST   /api/projects/<team>/agent_custom_tool_templates/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/usages/
- * @summary Create a new custom tool template — produces v1.
- */
-export const agentCustomToolTemplatesCreate = async (
-    projectId: string,
-    customToolTemplateCreateApi: CustomToolTemplateCreateApi,
-    options?: RequestInit
-): Promise<CustomToolTemplateDetailApi> => {
-    return apiMutator<CustomToolTemplateDetailApi>(getAgentCustomToolTemplatesCreateUrl(projectId), {
-        ...options,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...options?.headers },
-        body: JSON.stringify(customToolTemplateCreateApi),
-    })
-}
-
-export const getAgentCustomToolTemplatesNameRetrieveUrl = (
-    projectId: string,
-    name: string,
-    params?: AgentCustomToolTemplatesNameRetrieveParams
-) => {
-    const normalizedParams = new URLSearchParams()
-
-    Object.entries(params || {}).forEach(([key, value]) => {
-        if (value !== undefined) {
-            normalizedParams.append(key, value === null ? 'null' : value.toString())
-        }
-    })
-
-    const stringifiedParams = normalizedParams.toString()
-
-    return stringifiedParams.length > 0
-        ? `/api/projects/${projectId}/agent_custom_tool_templates/name/${name}/?${stringifiedParams}`
-        : `/api/projects/${projectId}/agent_custom_tool_templates/name/${name}/`
-}
-
-/**
- * Shared, versioned TypeScript custom tool templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_custom_tool_templates/
-    POST   /api/projects/<team>/agent_custom_tool_templates/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/usages/
- * @summary Retrieve a custom tool template's latest version, or a specific version with `?version=N`.
- */
-export const agentCustomToolTemplatesNameRetrieve = async (
-    projectId: string,
-    name: string,
-    params?: AgentCustomToolTemplatesNameRetrieveParams,
-    options?: RequestInit
-): Promise<CustomToolTemplateDetailApi> => {
-    return apiMutator<CustomToolTemplateDetailApi>(
-        getAgentCustomToolTemplatesNameRetrieveUrl(projectId, name, params),
-        {
-            ...options,
-            method: 'GET',
-        }
-    )
-}
-
-export const getAgentCustomToolTemplatesNameArchiveCreateUrl = (projectId: string, name: string) => {
-    return `/api/projects/${projectId}/agent_custom_tool_templates/name/${name}/archive/`
-}
-
-/**
- * Shared, versioned TypeScript custom tool templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_custom_tool_templates/
-    POST   /api/projects/<team>/agent_custom_tool_templates/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/usages/
- * @summary Soft-delete all versions of a custom tool template.
- */
-export const agentCustomToolTemplatesNameArchiveCreate = async (
-    projectId: string,
-    name: string,
-    customToolTemplateDetailApi: NonReadonly<CustomToolTemplateDetailApi>,
+    params?: AgentFleetApprovalsListParams,
     options?: RequestInit
 ): Promise<void> => {
-    return apiMutator<void>(getAgentCustomToolTemplatesNameArchiveCreateUrl(projectId, name), {
-        ...options,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...options?.headers },
-        body: JSON.stringify(customToolTemplateDetailApi),
-    })
-}
-
-export const getAgentCustomToolTemplatesNameDuplicateCreateUrl = (projectId: string, name: string) => {
-    return `/api/projects/${projectId}/agent_custom_tool_templates/name/${name}/duplicate/`
-}
-
-/**
- * Shared, versioned TypeScript custom tool templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_custom_tool_templates/
-    POST   /api/projects/<team>/agent_custom_tool_templates/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/usages/
- * @summary Duplicate a custom tool template under a new name.
- */
-export const agentCustomToolTemplatesNameDuplicateCreate = async (
-    projectId: string,
-    name: string,
-    customToolTemplateDuplicateApi: CustomToolTemplateDuplicateApi,
-    options?: RequestInit
-): Promise<CustomToolTemplateDetailApi> => {
-    return apiMutator<CustomToolTemplateDetailApi>(getAgentCustomToolTemplatesNameDuplicateCreateUrl(projectId, name), {
-        ...options,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...options?.headers },
-        body: JSON.stringify(customToolTemplateDuplicateApi),
-    })
-}
-
-export const getAgentCustomToolTemplatesNamePublishCreateUrl = (projectId: string, name: string) => {
-    return `/api/projects/${projectId}/agent_custom_tool_templates/name/${name}/publish/`
-}
-
-/**
- * Shared, versioned TypeScript custom tool templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_custom_tool_templates/
-    POST   /api/projects/<team>/agent_custom_tool_templates/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/usages/
- * @summary Publish a new version of the named custom tool template.
- */
-export const agentCustomToolTemplatesNamePublishCreate = async (
-    projectId: string,
-    name: string,
-    customToolTemplatePublishApi?: CustomToolTemplatePublishApi,
-    options?: RequestInit
-): Promise<CustomToolTemplateDetailApi> => {
-    return apiMutator<CustomToolTemplateDetailApi>(getAgentCustomToolTemplatesNamePublishCreateUrl(projectId, name), {
-        ...options,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...options?.headers },
-        body: JSON.stringify(customToolTemplatePublishApi),
-    })
-}
-
-export const getAgentCustomToolTemplatesNameUsagesListUrl = (
-    projectId: string,
-    name: string,
-    params?: AgentCustomToolTemplatesNameUsagesListParams
-) => {
-    const normalizedParams = new URLSearchParams()
-
-    Object.entries(params || {}).forEach(([key, value]) => {
-        if (value !== undefined) {
-            normalizedParams.append(key, value === null ? 'null' : value.toString())
-        }
-    })
-
-    const stringifiedParams = normalizedParams.toString()
-
-    return stringifiedParams.length > 0
-        ? `/api/projects/${projectId}/agent_custom_tool_templates/name/${name}/usages/?${stringifiedParams}`
-        : `/api/projects/${projectId}/agent_custom_tool_templates/name/${name}/usages/`
-}
-
-/**
- * Shared, versioned TypeScript custom tool templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_custom_tool_templates/
-    POST   /api/projects/<team>/agent_custom_tool_templates/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/usages/
- * @summary List the frozen agent revisions pinning this custom tool template.
- */
-export const agentCustomToolTemplatesNameUsagesList = async (
-    projectId: string,
-    name: string,
-    params?: AgentCustomToolTemplatesNameUsagesListParams,
-    options?: RequestInit
-): Promise<CustomToolTemplateUsageApi[]> => {
-    return apiMutator<CustomToolTemplateUsageApi[]>(
-        getAgentCustomToolTemplatesNameUsagesListUrl(projectId, name, params),
-        {
-            ...options,
-            method: 'GET',
-        }
-    )
-}
-
-export const getAgentCustomToolTemplatesNameVersionsListUrl = (projectId: string, name: string) => {
-    return `/api/projects/${projectId}/agent_custom_tool_templates/name/${name}/versions/`
-}
-
-/**
- * Shared, versioned TypeScript custom tool templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_custom_tool_templates/
-    POST   /api/projects/<team>/agent_custom_tool_templates/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_custom_tool_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_custom_tool_templates/name/<name>/usages/
- * @summary List every version of the named custom tool template, newest first.
- */
-export const agentCustomToolTemplatesNameVersionsList = async (
-    projectId: string,
-    name: string,
-    options?: RequestInit
-): Promise<TemplateVersionEntryApi[]> => {
-    return apiMutator<TemplateVersionEntryApi[]>(getAgentCustomToolTemplatesNameVersionsListUrl(projectId, name), {
+    return apiMutator<void>(getAgentFleetApprovalsListUrl(projectId, params), {
         ...options,
         method: 'GET',
     })
@@ -2113,455 +2043,6 @@ export const agentNativeToolsList = async (
     options?: RequestInit
 ): Promise<AgentNativeToolsListResponseApi[]> => {
     return apiMutator<AgentNativeToolsListResponseApi[]>(getAgentNativeToolsListUrl(projectId), {
-        ...options,
-        method: 'GET',
-    })
-}
-
-export const getAgentSkillTemplatesListUrl = (projectId: string, params?: AgentSkillTemplatesListParams) => {
-    const normalizedParams = new URLSearchParams()
-
-    Object.entries(params || {}).forEach(([key, value]) => {
-        if (value !== undefined) {
-            normalizedParams.append(key, value === null ? 'null' : value.toString())
-        }
-    })
-
-    const stringifiedParams = normalizedParams.toString()
-
-    return stringifiedParams.length > 0
-        ? `/api/projects/${projectId}/agent_skill_templates/?${stringifiedParams}`
-        : `/api/projects/${projectId}/agent_skill_templates/`
-}
-
-/**
- * Shared, versioned markdown skill templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_skill_templates/
-    POST   /api/projects/<team>/agent_skill_templates/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/usages/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files/
-    DELETE /api/projects/<team>/agent_skill_templates/name/<name>/files/<path>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files-rename/
-
-Canonical (`@posthog/<name>`) templates are read-only for team
-members; only PostHog-side seed commands write them.
- * @summary List the latest version of every skill template visible to the team.
- */
-export const agentSkillTemplatesList = async (
-    projectId: string,
-    params?: AgentSkillTemplatesListParams,
-    options?: RequestInit
-): Promise<SkillTemplateSummaryApi[]> => {
-    return apiMutator<SkillTemplateSummaryApi[]>(getAgentSkillTemplatesListUrl(projectId, params), {
-        ...options,
-        method: 'GET',
-    })
-}
-
-export const getAgentSkillTemplatesCreateUrl = (projectId: string) => {
-    return `/api/projects/${projectId}/agent_skill_templates/`
-}
-
-/**
- * Shared, versioned markdown skill templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_skill_templates/
-    POST   /api/projects/<team>/agent_skill_templates/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/usages/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files/
-    DELETE /api/projects/<team>/agent_skill_templates/name/<name>/files/<path>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files-rename/
-
-Canonical (`@posthog/<name>`) templates are read-only for team
-members; only PostHog-side seed commands write them.
- * @summary Create a new skill template — produces v1.
- */
-export const agentSkillTemplatesCreate = async (
-    projectId: string,
-    skillTemplateCreateApi: SkillTemplateCreateApi,
-    options?: RequestInit
-): Promise<SkillTemplateDetailApi> => {
-    return apiMutator<SkillTemplateDetailApi>(getAgentSkillTemplatesCreateUrl(projectId), {
-        ...options,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...options?.headers },
-        body: JSON.stringify(skillTemplateCreateApi),
-    })
-}
-
-export const getAgentSkillTemplatesNameRetrieveUrl = (
-    projectId: string,
-    name: string,
-    params?: AgentSkillTemplatesNameRetrieveParams
-) => {
-    const normalizedParams = new URLSearchParams()
-
-    Object.entries(params || {}).forEach(([key, value]) => {
-        if (value !== undefined) {
-            normalizedParams.append(key, value === null ? 'null' : value.toString())
-        }
-    })
-
-    const stringifiedParams = normalizedParams.toString()
-
-    return stringifiedParams.length > 0
-        ? `/api/projects/${projectId}/agent_skill_templates/name/${name}/?${stringifiedParams}`
-        : `/api/projects/${projectId}/agent_skill_templates/name/${name}/`
-}
-
-/**
- * Shared, versioned markdown skill templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_skill_templates/
-    POST   /api/projects/<team>/agent_skill_templates/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/usages/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files/
-    DELETE /api/projects/<team>/agent_skill_templates/name/<name>/files/<path>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files-rename/
-
-Canonical (`@posthog/<name>`) templates are read-only for team
-members; only PostHog-side seed commands write them.
- * @summary Retrieve a skill template's latest version, or a specific version with `?version=N`.
- */
-export const agentSkillTemplatesNameRetrieve = async (
-    projectId: string,
-    name: string,
-    params?: AgentSkillTemplatesNameRetrieveParams,
-    options?: RequestInit
-): Promise<SkillTemplateDetailApi> => {
-    return apiMutator<SkillTemplateDetailApi>(getAgentSkillTemplatesNameRetrieveUrl(projectId, name, params), {
-        ...options,
-        method: 'GET',
-    })
-}
-
-export const getAgentSkillTemplatesNameArchiveCreateUrl = (projectId: string, name: string) => {
-    return `/api/projects/${projectId}/agent_skill_templates/name/${name}/archive/`
-}
-
-/**
- * Shared, versioned markdown skill templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_skill_templates/
-    POST   /api/projects/<team>/agent_skill_templates/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/usages/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files/
-    DELETE /api/projects/<team>/agent_skill_templates/name/<name>/files/<path>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files-rename/
-
-Canonical (`@posthog/<name>`) templates are read-only for team
-members; only PostHog-side seed commands write them.
- * @summary Soft-delete all versions of a template.
- */
-export const agentSkillTemplatesNameArchiveCreate = async (
-    projectId: string,
-    name: string,
-    skillTemplateDetailApi: NonReadonly<SkillTemplateDetailApi>,
-    options?: RequestInit
-): Promise<void> => {
-    return apiMutator<void>(getAgentSkillTemplatesNameArchiveCreateUrl(projectId, name), {
-        ...options,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...options?.headers },
-        body: JSON.stringify(skillTemplateDetailApi),
-    })
-}
-
-export const getAgentSkillTemplatesNameDuplicateCreateUrl = (projectId: string, name: string) => {
-    return `/api/projects/${projectId}/agent_skill_templates/name/${name}/duplicate/`
-}
-
-/**
- * Shared, versioned markdown skill templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_skill_templates/
-    POST   /api/projects/<team>/agent_skill_templates/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/usages/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files/
-    DELETE /api/projects/<team>/agent_skill_templates/name/<name>/files/<path>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files-rename/
-
-Canonical (`@posthog/<name>`) templates are read-only for team
-members; only PostHog-side seed commands write them.
- * @summary Duplicate a template under a new name (clones the latest version's content + files).
- */
-export const agentSkillTemplatesNameDuplicateCreate = async (
-    projectId: string,
-    name: string,
-    skillTemplateDuplicateApi: SkillTemplateDuplicateApi,
-    options?: RequestInit
-): Promise<SkillTemplateDetailApi> => {
-    return apiMutator<SkillTemplateDetailApi>(getAgentSkillTemplatesNameDuplicateCreateUrl(projectId, name), {
-        ...options,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...options?.headers },
-        body: JSON.stringify(skillTemplateDuplicateApi),
-    })
-}
-
-export const getAgentSkillTemplatesNameFilesCreateUrl = (projectId: string, name: string) => {
-    return `/api/projects/${projectId}/agent_skill_templates/name/${name}/files/`
-}
-
-/**
- * Shared, versioned markdown skill templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_skill_templates/
-    POST   /api/projects/<team>/agent_skill_templates/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/usages/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files/
-    DELETE /api/projects/<team>/agent_skill_templates/name/<name>/files/<path>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files-rename/
-
-Canonical (`@posthog/<name>`) templates are read-only for team
-members; only PostHog-side seed commands write them.
- * @summary Add a companion file to the latest version of the template.
- */
-export const agentSkillTemplatesNameFilesCreate = async (
-    projectId: string,
-    name: string,
-    skillTemplateFileWriteApi: SkillTemplateFileWriteApi,
-    options?: RequestInit
-): Promise<SkillTemplateFileApi> => {
-    return apiMutator<SkillTemplateFileApi>(getAgentSkillTemplatesNameFilesCreateUrl(projectId, name), {
-        ...options,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...options?.headers },
-        body: JSON.stringify(skillTemplateFileWriteApi),
-    })
-}
-
-export const getAgentSkillTemplatesNameFilesRenameCreateUrl = (projectId: string, name: string) => {
-    return `/api/projects/${projectId}/agent_skill_templates/name/${name}/files-rename/`
-}
-
-/**
- * Shared, versioned markdown skill templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_skill_templates/
-    POST   /api/projects/<team>/agent_skill_templates/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/usages/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files/
-    DELETE /api/projects/<team>/agent_skill_templates/name/<name>/files/<path>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files-rename/
-
-Canonical (`@posthog/<name>`) templates are read-only for team
-members; only PostHog-side seed commands write them.
- * @summary Rename a companion file inside the latest version of the template.
- */
-export const agentSkillTemplatesNameFilesRenameCreate = async (
-    projectId: string,
-    name: string,
-    skillTemplateFileRenameApi: SkillTemplateFileRenameApi,
-    options?: RequestInit
-): Promise<SkillTemplateFileApi> => {
-    return apiMutator<SkillTemplateFileApi>(getAgentSkillTemplatesNameFilesRenameCreateUrl(projectId, name), {
-        ...options,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...options?.headers },
-        body: JSON.stringify(skillTemplateFileRenameApi),
-    })
-}
-
-export const getAgentSkillTemplatesNameFilesDestroyUrl = (projectId: string, name: string, filePath: string) => {
-    return `/api/projects/${projectId}/agent_skill_templates/name/${name}/files/${filePath}/`
-}
-
-/**
- * Shared, versioned markdown skill templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_skill_templates/
-    POST   /api/projects/<team>/agent_skill_templates/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/usages/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files/
-    DELETE /api/projects/<team>/agent_skill_templates/name/<name>/files/<path>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files-rename/
-
-Canonical (`@posthog/<name>`) templates are read-only for team
-members; only PostHog-side seed commands write them.
- * @summary Remove a companion file from the latest version of the template.
- */
-export const agentSkillTemplatesNameFilesDestroy = async (
-    projectId: string,
-    name: string,
-    filePath: string,
-    options?: RequestInit
-): Promise<void> => {
-    return apiMutator<void>(getAgentSkillTemplatesNameFilesDestroyUrl(projectId, name, filePath), {
-        ...options,
-        method: 'DELETE',
-    })
-}
-
-export const getAgentSkillTemplatesNamePublishCreateUrl = (projectId: string, name: string) => {
-    return `/api/projects/${projectId}/agent_skill_templates/name/${name}/publish/`
-}
-
-/**
- * Shared, versioned markdown skill templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_skill_templates/
-    POST   /api/projects/<team>/agent_skill_templates/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/usages/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files/
-    DELETE /api/projects/<team>/agent_skill_templates/name/<name>/files/<path>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files-rename/
-
-Canonical (`@posthog/<name>`) templates are read-only for team
-members; only PostHog-side seed commands write them.
- * @summary Publish a new version of the named template.
- */
-export const agentSkillTemplatesNamePublishCreate = async (
-    projectId: string,
-    name: string,
-    skillTemplatePublishApi?: SkillTemplatePublishApi,
-    options?: RequestInit
-): Promise<SkillTemplateDetailApi> => {
-    return apiMutator<SkillTemplateDetailApi>(getAgentSkillTemplatesNamePublishCreateUrl(projectId, name), {
-        ...options,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...options?.headers },
-        body: JSON.stringify(skillTemplatePublishApi),
-    })
-}
-
-export const getAgentSkillTemplatesNameUsagesListUrl = (
-    projectId: string,
-    name: string,
-    params?: AgentSkillTemplatesNameUsagesListParams
-) => {
-    const normalizedParams = new URLSearchParams()
-
-    Object.entries(params || {}).forEach(([key, value]) => {
-        if (value !== undefined) {
-            normalizedParams.append(key, value === null ? 'null' : value.toString())
-        }
-    })
-
-    const stringifiedParams = normalizedParams.toString()
-
-    return stringifiedParams.length > 0
-        ? `/api/projects/${projectId}/agent_skill_templates/name/${name}/usages/?${stringifiedParams}`
-        : `/api/projects/${projectId}/agent_skill_templates/name/${name}/usages/`
-}
-
-/**
- * Shared, versioned markdown skill templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_skill_templates/
-    POST   /api/projects/<team>/agent_skill_templates/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/usages/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files/
-    DELETE /api/projects/<team>/agent_skill_templates/name/<name>/files/<path>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files-rename/
-
-Canonical (`@posthog/<name>`) templates are read-only for team
-members; only PostHog-side seed commands write them.
- * @summary List the frozen agent revisions pinning this template (any version, or filtered by `pinned_version`).
- */
-export const agentSkillTemplatesNameUsagesList = async (
-    projectId: string,
-    name: string,
-    params?: AgentSkillTemplatesNameUsagesListParams,
-    options?: RequestInit
-): Promise<SkillTemplateUsageApi[]> => {
-    return apiMutator<SkillTemplateUsageApi[]>(getAgentSkillTemplatesNameUsagesListUrl(projectId, name, params), {
-        ...options,
-        method: 'GET',
-    })
-}
-
-export const getAgentSkillTemplatesNameVersionsListUrl = (projectId: string, name: string) => {
-    return `/api/projects/${projectId}/agent_skill_templates/name/${name}/versions/`
-}
-
-/**
- * Shared, versioned markdown skill templates.
-
-URLs:
-    GET    /api/projects/<team>/agent_skill_templates/
-    POST   /api/projects/<team>/agent_skill_templates/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/publish/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/archive/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/duplicate/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/versions/
-    GET    /api/projects/<team>/agent_skill_templates/name/<name>/usages/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files/
-    DELETE /api/projects/<team>/agent_skill_templates/name/<name>/files/<path>/
-    POST   /api/projects/<team>/agent_skill_templates/name/<name>/files-rename/
-
-Canonical (`@posthog/<name>`) templates are read-only for team
-members; only PostHog-side seed commands write them.
- * @summary List every version of the named template, newest first.
- */
-export const agentSkillTemplatesNameVersionsList = async (
-    projectId: string,
-    name: string,
-    options?: RequestInit
-): Promise<TemplateVersionEntryApi[]> => {
-    return apiMutator<TemplateVersionEntryApi[]>(getAgentSkillTemplatesNameVersionsListUrl(projectId, name), {
         ...options,
         method: 'GET',
     })

@@ -15,6 +15,8 @@ import {
     AgentApplicationsPreviewProxyParams,
     AgentApplicationsPreviewProxyQueryParams,
     AgentApplicationsRetrieveParams,
+    AgentApplicationsRevisionsAgentMdUpdateBody,
+    AgentApplicationsRevisionsAgentMdUpdateParams,
     AgentApplicationsRevisionsArchiveCreateParams,
     AgentApplicationsRevisionsBundleRetrieveParams,
     AgentApplicationsRevisionsBundleUpdateBody,
@@ -25,13 +27,6 @@ import {
     AgentApplicationsRevisionsCreateParams,
     AgentApplicationsRevisionsCronFireCreateBody,
     AgentApplicationsRevisionsCronFireCreateParams,
-    AgentApplicationsRevisionsFileDestroyParams,
-    AgentApplicationsRevisionsFileDestroyQueryParams,
-    AgentApplicationsRevisionsFileRetrieveParams,
-    AgentApplicationsRevisionsFileRetrieveQueryParams,
-    AgentApplicationsRevisionsFileUpdateBody,
-    AgentApplicationsRevisionsFileUpdateParams,
-    AgentApplicationsRevisionsFileUpdateQueryParams,
     AgentApplicationsRevisionsFreezeCreateParams,
     AgentApplicationsRevisionsListParams,
     AgentApplicationsRevisionsListQueryParams,
@@ -42,7 +37,16 @@ import {
     AgentApplicationsRevisionsPartialUpdateParams,
     AgentApplicationsRevisionsPromoteCreateParams,
     AgentApplicationsRevisionsRetrieveParams,
+    AgentApplicationsRevisionsSkillsDestroyParams,
+    AgentApplicationsRevisionsSkillsUpdateBody,
+    AgentApplicationsRevisionsSkillsUpdateParams,
+    AgentApplicationsRevisionsSlackManifestParams,
+    AgentApplicationsRevisionsSpecUpdateBody,
+    AgentApplicationsRevisionsSpecUpdateParams,
     AgentApplicationsRevisionsSystemPromptParams,
+    AgentApplicationsRevisionsToolsDestroyParams,
+    AgentApplicationsRevisionsToolsUpdateBody,
+    AgentApplicationsRevisionsToolsUpdateParams,
     AgentApplicationsRevisionsValidateCreateParams,
     AgentApplicationsSessionsListParams,
     AgentApplicationsSessionsListQueryParams,
@@ -50,39 +54,7 @@ import {
     AgentApplicationsSessionsRetrieveQueryParams,
     AgentApplicationsSetEnvCreateBody,
     AgentApplicationsSetEnvCreateParams,
-    AgentCustomToolTemplatesCreateBody,
-    AgentCustomToolTemplatesListQueryParams,
-    AgentCustomToolTemplatesNameArchiveCreateBody,
-    AgentCustomToolTemplatesNameArchiveCreateParams,
-    AgentCustomToolTemplatesNameDuplicateCreateBody,
-    AgentCustomToolTemplatesNameDuplicateCreateParams,
-    AgentCustomToolTemplatesNamePublishCreateBody,
-    AgentCustomToolTemplatesNamePublishCreateParams,
-    AgentCustomToolTemplatesNameRetrieveParams,
-    AgentCustomToolTemplatesNameRetrieveQueryParams,
-    AgentCustomToolTemplatesNameUsagesListParams,
-    AgentCustomToolTemplatesNameUsagesListQueryParams,
-    AgentCustomToolTemplatesNameVersionsListParams,
-    AgentSkillTemplatesCreateBody,
-    AgentSkillTemplatesListQueryParams,
-    AgentSkillTemplatesNameArchiveCreateBody,
-    AgentSkillTemplatesNameArchiveCreateParams,
-    AgentSkillTemplatesNameDuplicateCreateBody,
-    AgentSkillTemplatesNameDuplicateCreateParams,
-    AgentSkillTemplatesNameFilesCreateBody,
-    AgentSkillTemplatesNameFilesCreateParams,
-    AgentSkillTemplatesNameFilesDestroyParams,
-    AgentSkillTemplatesNameFilesRenameCreateBody,
-    AgentSkillTemplatesNameFilesRenameCreateParams,
-    AgentSkillTemplatesNamePublishCreateBody,
-    AgentSkillTemplatesNamePublishCreateParams,
-    AgentSkillTemplatesNameRetrieveParams,
-    AgentSkillTemplatesNameRetrieveQueryParams,
-    AgentSkillTemplatesNameUsagesListParams,
-    AgentSkillTemplatesNameUsagesListQueryParams,
-    AgentSkillTemplatesNameVersionsListParams,
 } from '@/generated/agent_platform/api'
-import { withPostHogUrl, type WithPostHogUrl } from '@/tools/tool-utils'
 import type { Context, ToolBase, ZodObjectAny } from '@/tools/types'
 
 const AgentApplicationsCreateSchema = AgentApplicationsCreateBody
@@ -332,16 +304,174 @@ const agentApplicationsRevisionsBundleUpdate = (): ToolBase<
     handler: async (context: Context, params: z.infer<typeof AgentApplicationsRevisionsBundleUpdateSchema>) => {
         const projectId = await context.stateManager.getProjectId()
         const body: Record<string, unknown> = {}
-        if (params.files !== undefined) {
-            body['files'] = params.files
+        if (params.agent_md !== undefined) {
+            body['agent_md'] = params.agent_md
         }
-        if (params.mode !== undefined) {
-            body['mode'] = params.mode
+        if (params.skills !== undefined) {
+            body['skills'] = params.skills
+        }
+        if (params.tools !== undefined) {
+            body['tools'] = params.tools
+        }
+        if (params.spec !== undefined) {
+            body['spec'] = params.spec
         }
         const result = await context.api.request<Schemas.AgentRevision>({
             method: 'PUT',
             path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_applications/${encodeURIComponent(String(params.application_id))}/revisions/${encodeURIComponent(String(params.id))}/bundle/`,
             body,
+        })
+        return result
+    },
+})
+
+const AgentApplicationsRevisionsAgentMdUpdateSchema = AgentApplicationsRevisionsAgentMdUpdateParams.omit({
+    project_id: true,
+}).extend(AgentApplicationsRevisionsAgentMdUpdateBody.shape)
+
+const agentApplicationsRevisionsAgentMdUpdate = (): ToolBase<
+    typeof AgentApplicationsRevisionsAgentMdUpdateSchema,
+    Schemas.AgentRevision
+> => ({
+    name: 'agent-applications-revisions-agent-md-update',
+    schema: AgentApplicationsRevisionsAgentMdUpdateSchema,
+    handler: async (context: Context, params: z.infer<typeof AgentApplicationsRevisionsAgentMdUpdateSchema>) => {
+        const projectId = await context.stateManager.getProjectId()
+        const body: Record<string, unknown> = {}
+        if (params.content !== undefined) {
+            body['content'] = params.content
+        }
+        const result = await context.api.request<Schemas.AgentRevision>({
+            method: 'PUT',
+            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_applications/${encodeURIComponent(String(params.application_id))}/revisions/${encodeURIComponent(String(params.id))}/agent_md/`,
+            body,
+        })
+        return result
+    },
+})
+
+const AgentApplicationsRevisionsSpecUpdateSchema = AgentApplicationsRevisionsSpecUpdateParams.omit({
+    project_id: true,
+}).extend(AgentApplicationsRevisionsSpecUpdateBody.shape)
+
+const agentApplicationsRevisionsSpecUpdate = (): ToolBase<
+    typeof AgentApplicationsRevisionsSpecUpdateSchema,
+    Schemas.AgentRevision
+> => ({
+    name: 'agent-applications-revisions-spec-update',
+    schema: AgentApplicationsRevisionsSpecUpdateSchema,
+    handler: async (context: Context, params: z.infer<typeof AgentApplicationsRevisionsSpecUpdateSchema>) => {
+        const projectId = await context.stateManager.getProjectId()
+        const body: Record<string, unknown> = {}
+        if (params.spec !== undefined) {
+            body['spec'] = params.spec
+        }
+        const result = await context.api.request<Schemas.AgentRevision>({
+            method: 'PUT',
+            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_applications/${encodeURIComponent(String(params.application_id))}/revisions/${encodeURIComponent(String(params.id))}/spec/`,
+            body,
+        })
+        return result
+    },
+})
+
+const AgentApplicationsRevisionsSkillsUpdateSchema = AgentApplicationsRevisionsSkillsUpdateParams.omit({
+    project_id: true,
+}).extend(AgentApplicationsRevisionsSkillsUpdateBody.shape)
+
+const agentApplicationsRevisionsSkillsUpdate = (): ToolBase<
+    typeof AgentApplicationsRevisionsSkillsUpdateSchema,
+    Schemas.AgentRevision
+> => ({
+    name: 'agent-applications-revisions-skills-update',
+    schema: AgentApplicationsRevisionsSkillsUpdateSchema,
+    handler: async (context: Context, params: z.infer<typeof AgentApplicationsRevisionsSkillsUpdateSchema>) => {
+        const projectId = await context.stateManager.getProjectId()
+        const body: Record<string, unknown> = {}
+        if (params.description !== undefined) {
+            body['description'] = params.description
+        }
+        if (params.body !== undefined) {
+            body['body'] = params.body
+        }
+        if (params.files !== undefined) {
+            body['files'] = params.files
+        }
+        const result = await context.api.request<Schemas.AgentRevision>({
+            method: 'PUT',
+            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_applications/${encodeURIComponent(String(params.application_id))}/revisions/${encodeURIComponent(String(params.id))}/skills/${encodeURIComponent(String(params.skill_id))}/`,
+            body,
+        })
+        return result
+    },
+})
+
+const AgentApplicationsRevisionsSkillsDestroySchema = AgentApplicationsRevisionsSkillsDestroyParams.omit({
+    project_id: true,
+})
+
+const agentApplicationsRevisionsSkillsDestroy = (): ToolBase<
+    typeof AgentApplicationsRevisionsSkillsDestroySchema,
+    unknown
+> => ({
+    name: 'agent-applications-revisions-skills-destroy',
+    schema: AgentApplicationsRevisionsSkillsDestroySchema,
+    handler: async (context: Context, params: z.infer<typeof AgentApplicationsRevisionsSkillsDestroySchema>) => {
+        const projectId = await context.stateManager.getProjectId()
+        const result = await context.api.request<unknown>({
+            method: 'DELETE',
+            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_applications/${encodeURIComponent(String(params.application_id))}/revisions/${encodeURIComponent(String(params.id))}/skills/${encodeURIComponent(String(params.skill_id))}/`,
+        })
+        return result
+    },
+})
+
+const AgentApplicationsRevisionsToolsUpdateSchema = AgentApplicationsRevisionsToolsUpdateParams.omit({
+    project_id: true,
+}).extend(AgentApplicationsRevisionsToolsUpdateBody.shape)
+
+const agentApplicationsRevisionsToolsUpdate = (): ToolBase<
+    typeof AgentApplicationsRevisionsToolsUpdateSchema,
+    Schemas.AgentRevision
+> => ({
+    name: 'agent-applications-revisions-tools-update',
+    schema: AgentApplicationsRevisionsToolsUpdateSchema,
+    handler: async (context: Context, params: z.infer<typeof AgentApplicationsRevisionsToolsUpdateSchema>) => {
+        const projectId = await context.stateManager.getProjectId()
+        const body: Record<string, unknown> = {}
+        if (params.description !== undefined) {
+            body['description'] = params.description
+        }
+        if (params.args_schema !== undefined) {
+            body['args_schema'] = params.args_schema
+        }
+        if (params.source !== undefined) {
+            body['source'] = params.source
+        }
+        const result = await context.api.request<Schemas.AgentRevision>({
+            method: 'PUT',
+            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_applications/${encodeURIComponent(String(params.application_id))}/revisions/${encodeURIComponent(String(params.id))}/tools/${encodeURIComponent(String(params.tool_id))}/`,
+            body,
+        })
+        return result
+    },
+})
+
+const AgentApplicationsRevisionsToolsDestroySchema = AgentApplicationsRevisionsToolsDestroyParams.omit({
+    project_id: true,
+})
+
+const agentApplicationsRevisionsToolsDestroy = (): ToolBase<
+    typeof AgentApplicationsRevisionsToolsDestroySchema,
+    unknown
+> => ({
+    name: 'agent-applications-revisions-tools-destroy',
+    schema: AgentApplicationsRevisionsToolsDestroySchema,
+    handler: async (context: Context, params: z.infer<typeof AgentApplicationsRevisionsToolsDestroySchema>) => {
+        const projectId = await context.stateManager.getProjectId()
+        const result = await context.api.request<unknown>({
+            method: 'DELETE',
+            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_applications/${encodeURIComponent(String(params.application_id))}/revisions/${encodeURIComponent(String(params.id))}/tools/${encodeURIComponent(String(params.tool_id))}/`,
         })
         return result
     },
@@ -431,80 +561,6 @@ const agentApplicationsRevisionsCronFireCreate = (): ToolBase<
     },
 })
 
-const AgentApplicationsRevisionsFileDestroySchema = AgentApplicationsRevisionsFileDestroyParams.omit({
-    project_id: true,
-}).extend(AgentApplicationsRevisionsFileDestroyQueryParams.shape)
-
-const agentApplicationsRevisionsFileDestroy = (): ToolBase<
-    typeof AgentApplicationsRevisionsFileDestroySchema,
-    unknown
-> => ({
-    name: 'agent-applications-revisions-file-destroy',
-    schema: AgentApplicationsRevisionsFileDestroySchema,
-    handler: async (context: Context, params: z.infer<typeof AgentApplicationsRevisionsFileDestroySchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const result = await context.api.request<unknown>({
-            method: 'DELETE',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_applications/${encodeURIComponent(String(params.application_id))}/revisions/${encodeURIComponent(String(params.id))}/file/`,
-            query: {
-                path: params.path,
-            },
-        })
-        return result
-    },
-})
-
-const AgentApplicationsRevisionsFileRetrieveSchema = AgentApplicationsRevisionsFileRetrieveParams.omit({
-    project_id: true,
-}).extend(AgentApplicationsRevisionsFileRetrieveQueryParams.shape)
-
-const agentApplicationsRevisionsFileRetrieve = (): ToolBase<
-    typeof AgentApplicationsRevisionsFileRetrieveSchema,
-    Schemas.AgentRevision
-> => ({
-    name: 'agent-applications-revisions-file-retrieve',
-    schema: AgentApplicationsRevisionsFileRetrieveSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentApplicationsRevisionsFileRetrieveSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const result = await context.api.request<Schemas.AgentRevision>({
-            method: 'GET',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_applications/${encodeURIComponent(String(params.application_id))}/revisions/${encodeURIComponent(String(params.id))}/file/`,
-            query: {
-                path: params.path,
-            },
-        })
-        return result
-    },
-})
-
-const AgentApplicationsRevisionsFileUpdateSchema = AgentApplicationsRevisionsFileUpdateParams.omit({ project_id: true })
-    .extend(AgentApplicationsRevisionsFileUpdateQueryParams.shape)
-    .extend(AgentApplicationsRevisionsFileUpdateBody.shape)
-
-const agentApplicationsRevisionsFileUpdate = (): ToolBase<
-    typeof AgentApplicationsRevisionsFileUpdateSchema,
-    Schemas.AgentRevision
-> => ({
-    name: 'agent-applications-revisions-file-update',
-    schema: AgentApplicationsRevisionsFileUpdateSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentApplicationsRevisionsFileUpdateSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const body: Record<string, unknown> = {}
-        if (params.content !== undefined) {
-            body['content'] = params.content
-        }
-        const result = await context.api.request<Schemas.AgentRevision>({
-            method: 'PUT',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_applications/${encodeURIComponent(String(params.application_id))}/revisions/${encodeURIComponent(String(params.id))}/file/`,
-            body,
-            query: {
-                path: params.path,
-            },
-        })
-        return result
-    },
-})
-
 const AgentApplicationsRevisionsFreezeCreateSchema = AgentApplicationsRevisionsFreezeCreateParams.omit({
     project_id: true,
 })
@@ -564,6 +620,26 @@ const agentApplicationsRevisionsManifestRetrieve = (): ToolBase<
         const result = await context.api.request<Schemas.AgentRevision>({
             method: 'GET',
             path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_applications/${encodeURIComponent(String(params.application_id))}/revisions/${encodeURIComponent(String(params.id))}/manifest/`,
+        })
+        return result
+    },
+})
+
+const AgentApplicationsRevisionsSlackManifestSchema = AgentApplicationsRevisionsSlackManifestParams.omit({
+    project_id: true,
+})
+
+const agentApplicationsRevisionsSlackManifest = (): ToolBase<
+    typeof AgentApplicationsRevisionsSlackManifestSchema,
+    Schemas.AgentRevisionSlackManifestResponse
+> => ({
+    name: 'agent-applications-revisions-slack-manifest',
+    schema: AgentApplicationsRevisionsSlackManifestSchema,
+    handler: async (context: Context, params: z.infer<typeof AgentApplicationsRevisionsSlackManifestSchema>) => {
+        const projectId = await context.stateManager.getProjectId()
+        const result = await context.api.request<Schemas.AgentRevisionSlackManifestResponse>({
+            method: 'GET',
+            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_applications/${encodeURIComponent(String(params.application_id))}/revisions/${encodeURIComponent(String(params.id))}/slack_manifest/`,
         })
         return result
     },
@@ -782,239 +858,6 @@ const agentApplicationsSetEnvCreate = (): ToolBase<
     },
 })
 
-const AgentCustomToolTemplatesCreateSchema = AgentCustomToolTemplatesCreateBody
-
-const agentCustomToolTemplatesCreate = (): ToolBase<
-    typeof AgentCustomToolTemplatesCreateSchema,
-    Schemas.CustomToolTemplateDetail
-> => ({
-    name: 'agent-custom-tool-templates-create',
-    schema: AgentCustomToolTemplatesCreateSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentCustomToolTemplatesCreateSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const body: Record<string, unknown> = {}
-        if (params.name !== undefined) {
-            body['name'] = params.name
-        }
-        if (params.description !== undefined) {
-            body['description'] = params.description
-        }
-        if (params.source !== undefined) {
-            body['source'] = params.source
-        }
-        if (params.compiled_js !== undefined) {
-            body['compiled_js'] = params.compiled_js
-        }
-        if (params.args_schema !== undefined) {
-            body['args_schema'] = params.args_schema
-        }
-        if (params.returns_schema !== undefined) {
-            body['returns_schema'] = params.returns_schema
-        }
-        if (params.requires_secrets !== undefined) {
-            body['requires_secrets'] = params.requires_secrets
-        }
-        const result = await context.api.request<Schemas.CustomToolTemplateDetail>({
-            method: 'POST',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_custom_tool_templates/`,
-            body,
-        })
-        return result
-    },
-})
-
-const AgentCustomToolTemplatesListSchema = AgentCustomToolTemplatesListQueryParams
-
-const agentCustomToolTemplatesList = (): ToolBase<
-    typeof AgentCustomToolTemplatesListSchema,
-    WithPostHogUrl<Schemas.CustomToolTemplateSummary[]>
-> => ({
-    name: 'agent-custom-tool-templates-list',
-    schema: AgentCustomToolTemplatesListSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentCustomToolTemplatesListSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const result = await context.api.request<Schemas.CustomToolTemplateSummary[]>({
-            method: 'GET',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_custom_tool_templates/`,
-            query: {
-                search: params.search,
-            },
-        })
-        return await withPostHogUrl(context, result, '/agent_applications')
-    },
-})
-
-const AgentCustomToolTemplatesNameArchiveCreateSchema = AgentCustomToolTemplatesNameArchiveCreateParams.omit({
-    project_id: true,
-}).extend(AgentCustomToolTemplatesNameArchiveCreateBody.shape)
-
-const agentCustomToolTemplatesNameArchiveCreate = (): ToolBase<
-    typeof AgentCustomToolTemplatesNameArchiveCreateSchema,
-    unknown
-> => ({
-    name: 'agent-custom-tool-templates-name-archive-create',
-    schema: AgentCustomToolTemplatesNameArchiveCreateSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentCustomToolTemplatesNameArchiveCreateSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const body: Record<string, unknown> = {}
-        if (params.source !== undefined) {
-            body['source'] = params.source
-        }
-        if (params.compiled_js !== undefined) {
-            body['compiled_js'] = params.compiled_js
-        }
-        if (params.args_schema !== undefined) {
-            body['args_schema'] = params.args_schema
-        }
-        if (params.returns_schema !== undefined) {
-            body['returns_schema'] = params.returns_schema
-        }
-        const result = await context.api.request<unknown>({
-            method: 'POST',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_custom_tool_templates/name/${encodeURIComponent(String(params.name))}/archive/`,
-            body,
-        })
-        return result
-    },
-})
-
-const AgentCustomToolTemplatesNameDuplicateCreateSchema = AgentCustomToolTemplatesNameDuplicateCreateParams.omit({
-    project_id: true,
-}).extend(AgentCustomToolTemplatesNameDuplicateCreateBody.shape)
-
-const agentCustomToolTemplatesNameDuplicateCreate = (): ToolBase<
-    typeof AgentCustomToolTemplatesNameDuplicateCreateSchema,
-    Schemas.CustomToolTemplateDetail
-> => ({
-    name: 'agent-custom-tool-templates-name-duplicate-create',
-    schema: AgentCustomToolTemplatesNameDuplicateCreateSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentCustomToolTemplatesNameDuplicateCreateSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const body: Record<string, unknown> = {}
-        if (params.name !== undefined) {
-            body['name'] = params.name
-        }
-        if (params.description !== undefined) {
-            body['description'] = params.description
-        }
-        const result = await context.api.request<Schemas.CustomToolTemplateDetail>({
-            method: 'POST',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_custom_tool_templates/name/${encodeURIComponent(String(params.name))}/duplicate/`,
-            body,
-        })
-        return result
-    },
-})
-
-const AgentCustomToolTemplatesNamePublishCreateSchema = AgentCustomToolTemplatesNamePublishCreateParams.omit({
-    project_id: true,
-}).extend(AgentCustomToolTemplatesNamePublishCreateBody.shape)
-
-const agentCustomToolTemplatesNamePublishCreate = (): ToolBase<
-    typeof AgentCustomToolTemplatesNamePublishCreateSchema,
-    Schemas.CustomToolTemplateDetail
-> => ({
-    name: 'agent-custom-tool-templates-name-publish-create',
-    schema: AgentCustomToolTemplatesNamePublishCreateSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentCustomToolTemplatesNamePublishCreateSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const body: Record<string, unknown> = {}
-        if (params.description !== undefined) {
-            body['description'] = params.description
-        }
-        if (params.source !== undefined) {
-            body['source'] = params.source
-        }
-        if (params.edits !== undefined) {
-            body['edits'] = params.edits
-        }
-        if (params.compiled_js !== undefined) {
-            body['compiled_js'] = params.compiled_js
-        }
-        if (params.args_schema !== undefined) {
-            body['args_schema'] = params.args_schema
-        }
-        if (params.returns_schema !== undefined) {
-            body['returns_schema'] = params.returns_schema
-        }
-        if (params.requires_secrets !== undefined) {
-            body['requires_secrets'] = params.requires_secrets
-        }
-        const result = await context.api.request<Schemas.CustomToolTemplateDetail>({
-            method: 'POST',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_custom_tool_templates/name/${encodeURIComponent(String(params.name))}/publish/`,
-            body,
-        })
-        return result
-    },
-})
-
-const AgentCustomToolTemplatesNameRetrieveSchema = AgentCustomToolTemplatesNameRetrieveParams.omit({
-    project_id: true,
-}).extend(AgentCustomToolTemplatesNameRetrieveQueryParams.shape)
-
-const agentCustomToolTemplatesNameRetrieve = (): ToolBase<
-    typeof AgentCustomToolTemplatesNameRetrieveSchema,
-    Schemas.CustomToolTemplateDetail
-> => ({
-    name: 'agent-custom-tool-templates-name-retrieve',
-    schema: AgentCustomToolTemplatesNameRetrieveSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentCustomToolTemplatesNameRetrieveSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const result = await context.api.request<Schemas.CustomToolTemplateDetail>({
-            method: 'GET',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_custom_tool_templates/name/${encodeURIComponent(String(params.name))}/`,
-            query: {
-                version: params.version,
-            },
-        })
-        return result
-    },
-})
-
-const AgentCustomToolTemplatesNameUsagesListSchema = AgentCustomToolTemplatesNameUsagesListParams.omit({
-    project_id: true,
-}).extend(AgentCustomToolTemplatesNameUsagesListQueryParams.shape)
-
-const agentCustomToolTemplatesNameUsagesList = (): ToolBase<
-    typeof AgentCustomToolTemplatesNameUsagesListSchema,
-    Schemas.CustomToolTemplateUsage[]
-> => ({
-    name: 'agent-custom-tool-templates-name-usages-list',
-    schema: AgentCustomToolTemplatesNameUsagesListSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentCustomToolTemplatesNameUsagesListSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const result = await context.api.request<Schemas.CustomToolTemplateUsage[]>({
-            method: 'GET',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_custom_tool_templates/name/${encodeURIComponent(String(params.name))}/usages/`,
-            query: {
-                pinned_version: params.pinned_version,
-            },
-        })
-        return result
-    },
-})
-
-const AgentCustomToolTemplatesNameVersionsListSchema = AgentCustomToolTemplatesNameVersionsListParams.omit({
-    project_id: true,
-})
-
-const agentCustomToolTemplatesNameVersionsList = (): ToolBase<
-    typeof AgentCustomToolTemplatesNameVersionsListSchema,
-    Schemas.TemplateVersionEntry[]
-> => ({
-    name: 'agent-custom-tool-templates-name-versions-list',
-    schema: AgentCustomToolTemplatesNameVersionsListSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentCustomToolTemplatesNameVersionsListSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const result = await context.api.request<Schemas.TemplateVersionEntry[]>({
-            method: 'GET',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_custom_tool_templates/name/${encodeURIComponent(String(params.name))}/versions/`,
-        })
-        return result
-    },
-})
-
 const AgentNativeToolsListSchema = z.object({})
 
 const agentNativeToolsList = (): ToolBase<
@@ -1034,314 +877,6 @@ const agentNativeToolsList = (): ToolBase<
     },
 })
 
-const AgentSkillTemplatesCreateSchema = AgentSkillTemplatesCreateBody
-
-const agentSkillTemplatesCreate = (): ToolBase<
-    typeof AgentSkillTemplatesCreateSchema,
-    Schemas.SkillTemplateDetail
-> => ({
-    name: 'agent-skill-templates-create',
-    schema: AgentSkillTemplatesCreateSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentSkillTemplatesCreateSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const body: Record<string, unknown> = {}
-        if (params.name !== undefined) {
-            body['name'] = params.name
-        }
-        if (params.description !== undefined) {
-            body['description'] = params.description
-        }
-        if (params.body !== undefined) {
-            body['body'] = params.body
-        }
-        if (params.license !== undefined) {
-            body['license'] = params.license
-        }
-        if (params.compatibility !== undefined) {
-            body['compatibility'] = params.compatibility
-        }
-        if (params.files !== undefined) {
-            body['files'] = params.files
-        }
-        if (params.metadata !== undefined) {
-            body['metadata'] = params.metadata
-        }
-        if (params.allowed_tools !== undefined) {
-            body['allowed_tools'] = params.allowed_tools
-        }
-        const result = await context.api.request<Schemas.SkillTemplateDetail>({
-            method: 'POST',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_skill_templates/`,
-            body,
-        })
-        return result
-    },
-})
-
-const AgentSkillTemplatesListSchema = AgentSkillTemplatesListQueryParams
-
-const agentSkillTemplatesList = (): ToolBase<
-    typeof AgentSkillTemplatesListSchema,
-    WithPostHogUrl<Schemas.SkillTemplateSummary[]>
-> => ({
-    name: 'agent-skill-templates-list',
-    schema: AgentSkillTemplatesListSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentSkillTemplatesListSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const result = await context.api.request<Schemas.SkillTemplateSummary[]>({
-            method: 'GET',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_skill_templates/`,
-            query: {
-                search: params.search,
-            },
-        })
-        return await withPostHogUrl(context, result, '/agent_applications')
-    },
-})
-
-const AgentSkillTemplatesNameArchiveCreateSchema = AgentSkillTemplatesNameArchiveCreateParams.omit({
-    project_id: true,
-}).extend(AgentSkillTemplatesNameArchiveCreateBody.shape)
-
-const agentSkillTemplatesNameArchiveCreate = (): ToolBase<
-    typeof AgentSkillTemplatesNameArchiveCreateSchema,
-    unknown
-> => ({
-    name: 'agent-skill-templates-name-archive-create',
-    schema: AgentSkillTemplatesNameArchiveCreateSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentSkillTemplatesNameArchiveCreateSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const body: Record<string, unknown> = {}
-        if (params.license !== undefined) {
-            body['license'] = params.license
-        }
-        if (params.compatibility !== undefined) {
-            body['compatibility'] = params.compatibility
-        }
-        if (params.body !== undefined) {
-            body['body'] = params.body
-        }
-        const result = await context.api.request<unknown>({
-            method: 'POST',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_skill_templates/name/${encodeURIComponent(String(params.name))}/archive/`,
-            body,
-        })
-        return result
-    },
-})
-
-const AgentSkillTemplatesNameDuplicateCreateSchema = AgentSkillTemplatesNameDuplicateCreateParams.omit({
-    project_id: true,
-}).extend(AgentSkillTemplatesNameDuplicateCreateBody.shape)
-
-const agentSkillTemplatesNameDuplicateCreate = (): ToolBase<
-    typeof AgentSkillTemplatesNameDuplicateCreateSchema,
-    Schemas.SkillTemplateDetail
-> => ({
-    name: 'agent-skill-templates-name-duplicate-create',
-    schema: AgentSkillTemplatesNameDuplicateCreateSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentSkillTemplatesNameDuplicateCreateSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const body: Record<string, unknown> = {}
-        if (params.name !== undefined) {
-            body['name'] = params.name
-        }
-        if (params.description !== undefined) {
-            body['description'] = params.description
-        }
-        const result = await context.api.request<Schemas.SkillTemplateDetail>({
-            method: 'POST',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_skill_templates/name/${encodeURIComponent(String(params.name))}/duplicate/`,
-            body,
-        })
-        return result
-    },
-})
-
-const AgentSkillTemplatesNameFilesCreateSchema = AgentSkillTemplatesNameFilesCreateParams.omit({
-    project_id: true,
-}).extend(AgentSkillTemplatesNameFilesCreateBody.shape)
-
-const agentSkillTemplatesNameFilesCreate = (): ToolBase<
-    typeof AgentSkillTemplatesNameFilesCreateSchema,
-    Schemas.SkillTemplateFile
-> => ({
-    name: 'agent-skill-templates-name-files-create',
-    schema: AgentSkillTemplatesNameFilesCreateSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentSkillTemplatesNameFilesCreateSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const body: Record<string, unknown> = {}
-        if (params.path !== undefined) {
-            body['path'] = params.path
-        }
-        if (params.content !== undefined) {
-            body['content'] = params.content
-        }
-        if (params.content_type !== undefined) {
-            body['content_type'] = params.content_type
-        }
-        const result = await context.api.request<Schemas.SkillTemplateFile>({
-            method: 'POST',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_skill_templates/name/${encodeURIComponent(String(params.name))}/files/`,
-            body,
-        })
-        return result
-    },
-})
-
-const AgentSkillTemplatesNameFilesDestroySchema = AgentSkillTemplatesNameFilesDestroyParams.omit({ project_id: true })
-
-const agentSkillTemplatesNameFilesDestroy = (): ToolBase<
-    typeof AgentSkillTemplatesNameFilesDestroySchema,
-    unknown
-> => ({
-    name: 'agent-skill-templates-name-files-destroy',
-    schema: AgentSkillTemplatesNameFilesDestroySchema,
-    handler: async (context: Context, params: z.infer<typeof AgentSkillTemplatesNameFilesDestroySchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const result = await context.api.request<unknown>({
-            method: 'DELETE',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_skill_templates/name/${encodeURIComponent(String(params.name))}/files/${encodeURIComponent(String(params.file_path))}/`,
-        })
-        return result
-    },
-})
-
-const AgentSkillTemplatesNameFilesRenameCreateSchema = AgentSkillTemplatesNameFilesRenameCreateParams.omit({
-    project_id: true,
-}).extend(AgentSkillTemplatesNameFilesRenameCreateBody.shape)
-
-const agentSkillTemplatesNameFilesRenameCreate = (): ToolBase<
-    typeof AgentSkillTemplatesNameFilesRenameCreateSchema,
-    Schemas.SkillTemplateFile
-> => ({
-    name: 'agent-skill-templates-name-files-rename-create',
-    schema: AgentSkillTemplatesNameFilesRenameCreateSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentSkillTemplatesNameFilesRenameCreateSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const body: Record<string, unknown> = {}
-        if (params.from_path !== undefined) {
-            body['from_path'] = params.from_path
-        }
-        if (params.to_path !== undefined) {
-            body['to_path'] = params.to_path
-        }
-        const result = await context.api.request<Schemas.SkillTemplateFile>({
-            method: 'POST',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_skill_templates/name/${encodeURIComponent(String(params.name))}/files-rename/`,
-            body,
-        })
-        return result
-    },
-})
-
-const AgentSkillTemplatesNamePublishCreateSchema = AgentSkillTemplatesNamePublishCreateParams.omit({
-    project_id: true,
-}).extend(AgentSkillTemplatesNamePublishCreateBody.shape)
-
-const agentSkillTemplatesNamePublishCreate = (): ToolBase<
-    typeof AgentSkillTemplatesNamePublishCreateSchema,
-    Schemas.SkillTemplateDetail
-> => ({
-    name: 'agent-skill-templates-name-publish-create',
-    schema: AgentSkillTemplatesNamePublishCreateSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentSkillTemplatesNamePublishCreateSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const body: Record<string, unknown> = {}
-        if (params.description !== undefined) {
-            body['description'] = params.description
-        }
-        if (params.body !== undefined) {
-            body['body'] = params.body
-        }
-        if (params.edits !== undefined) {
-            body['edits'] = params.edits
-        }
-        if (params.license !== undefined) {
-            body['license'] = params.license
-        }
-        if (params.compatibility !== undefined) {
-            body['compatibility'] = params.compatibility
-        }
-        if (params.metadata !== undefined) {
-            body['metadata'] = params.metadata
-        }
-        if (params.allowed_tools !== undefined) {
-            body['allowed_tools'] = params.allowed_tools
-        }
-        const result = await context.api.request<Schemas.SkillTemplateDetail>({
-            method: 'POST',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_skill_templates/name/${encodeURIComponent(String(params.name))}/publish/`,
-            body,
-        })
-        return result
-    },
-})
-
-const AgentSkillTemplatesNameRetrieveSchema = AgentSkillTemplatesNameRetrieveParams.omit({ project_id: true }).extend(
-    AgentSkillTemplatesNameRetrieveQueryParams.shape
-)
-
-const agentSkillTemplatesNameRetrieve = (): ToolBase<
-    typeof AgentSkillTemplatesNameRetrieveSchema,
-    Schemas.SkillTemplateDetail
-> => ({
-    name: 'agent-skill-templates-name-retrieve',
-    schema: AgentSkillTemplatesNameRetrieveSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentSkillTemplatesNameRetrieveSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const result = await context.api.request<Schemas.SkillTemplateDetail>({
-            method: 'GET',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_skill_templates/name/${encodeURIComponent(String(params.name))}/`,
-            query: {
-                version: params.version,
-            },
-        })
-        return result
-    },
-})
-
-const AgentSkillTemplatesNameUsagesListSchema = AgentSkillTemplatesNameUsagesListParams.omit({
-    project_id: true,
-}).extend(AgentSkillTemplatesNameUsagesListQueryParams.shape)
-
-const agentSkillTemplatesNameUsagesList = (): ToolBase<
-    typeof AgentSkillTemplatesNameUsagesListSchema,
-    Schemas.SkillTemplateUsage[]
-> => ({
-    name: 'agent-skill-templates-name-usages-list',
-    schema: AgentSkillTemplatesNameUsagesListSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentSkillTemplatesNameUsagesListSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const result = await context.api.request<Schemas.SkillTemplateUsage[]>({
-            method: 'GET',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_skill_templates/name/${encodeURIComponent(String(params.name))}/usages/`,
-            query: {
-                pinned_version: params.pinned_version,
-            },
-        })
-        return result
-    },
-})
-
-const AgentSkillTemplatesNameVersionsListSchema = AgentSkillTemplatesNameVersionsListParams.omit({ project_id: true })
-
-const agentSkillTemplatesNameVersionsList = (): ToolBase<
-    typeof AgentSkillTemplatesNameVersionsListSchema,
-    Schemas.TemplateVersionEntry[]
-> => ({
-    name: 'agent-skill-templates-name-versions-list',
-    schema: AgentSkillTemplatesNameVersionsListSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentSkillTemplatesNameVersionsListSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const result = await context.api.request<Schemas.TemplateVersionEntry[]>({
-            method: 'GET',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_skill_templates/name/${encodeURIComponent(String(params.name))}/versions/`,
-        })
-        return result
-    },
-})
-
 export const GENERATED_TOOLS: Record<string, () => ToolBase<ZodObjectAny>> = {
     'agent-applications-create': agentApplicationsCreate,
     'agent-applications-destroy': agentApplicationsDestroy,
@@ -1355,15 +890,19 @@ export const GENERATED_TOOLS: Record<string, () => ToolBase<ZodObjectAny>> = {
     'agent-applications-revisions-archive-create': agentApplicationsRevisionsArchiveCreate,
     'agent-applications-revisions-bundle-retrieve': agentApplicationsRevisionsBundleRetrieve,
     'agent-applications-revisions-bundle-update': agentApplicationsRevisionsBundleUpdate,
+    'agent-applications-revisions-agent-md-update': agentApplicationsRevisionsAgentMdUpdate,
+    'agent-applications-revisions-spec-update': agentApplicationsRevisionsSpecUpdate,
+    'agent-applications-revisions-skills-update': agentApplicationsRevisionsSkillsUpdate,
+    'agent-applications-revisions-skills-destroy': agentApplicationsRevisionsSkillsDestroy,
+    'agent-applications-revisions-tools-update': agentApplicationsRevisionsToolsUpdate,
+    'agent-applications-revisions-tools-destroy': agentApplicationsRevisionsToolsDestroy,
     'agent-applications-revisions-clone-from-create': agentApplicationsRevisionsCloneFromCreate,
     'agent-applications-revisions-create': agentApplicationsRevisionsCreate,
     'agent-applications-revisions-cron-fire-create': agentApplicationsRevisionsCronFireCreate,
-    'agent-applications-revisions-file-destroy': agentApplicationsRevisionsFileDestroy,
-    'agent-applications-revisions-file-retrieve': agentApplicationsRevisionsFileRetrieve,
-    'agent-applications-revisions-file-update': agentApplicationsRevisionsFileUpdate,
     'agent-applications-revisions-freeze-create': agentApplicationsRevisionsFreezeCreate,
     'agent-applications-revisions-list': agentApplicationsRevisionsList,
     'agent-applications-revisions-manifest-retrieve': agentApplicationsRevisionsManifestRetrieve,
+    'agent-applications-revisions-slack-manifest': agentApplicationsRevisionsSlackManifest,
     'agent-applications-revisions-new-draft-create': agentApplicationsRevisionsNewDraftCreate,
     'agent-applications-revisions-partial-update': agentApplicationsRevisionsPartialUpdate,
     'agent-applications-revisions-promote-create': agentApplicationsRevisionsPromoteCreate,
@@ -1373,24 +912,5 @@ export const GENERATED_TOOLS: Record<string, () => ToolBase<ZodObjectAny>> = {
     'agent-applications-sessions-list': agentApplicationsSessionsList,
     'agent-applications-sessions-retrieve': agentApplicationsSessionsRetrieve,
     'agent-applications-set-env-create': agentApplicationsSetEnvCreate,
-    'agent-custom-tool-templates-create': agentCustomToolTemplatesCreate,
-    'agent-custom-tool-templates-list': agentCustomToolTemplatesList,
-    'agent-custom-tool-templates-name-archive-create': agentCustomToolTemplatesNameArchiveCreate,
-    'agent-custom-tool-templates-name-duplicate-create': agentCustomToolTemplatesNameDuplicateCreate,
-    'agent-custom-tool-templates-name-publish-create': agentCustomToolTemplatesNamePublishCreate,
-    'agent-custom-tool-templates-name-retrieve': agentCustomToolTemplatesNameRetrieve,
-    'agent-custom-tool-templates-name-usages-list': agentCustomToolTemplatesNameUsagesList,
-    'agent-custom-tool-templates-name-versions-list': agentCustomToolTemplatesNameVersionsList,
     'agent-native-tools-list': agentNativeToolsList,
-    'agent-skill-templates-create': agentSkillTemplatesCreate,
-    'agent-skill-templates-list': agentSkillTemplatesList,
-    'agent-skill-templates-name-archive-create': agentSkillTemplatesNameArchiveCreate,
-    'agent-skill-templates-name-duplicate-create': agentSkillTemplatesNameDuplicateCreate,
-    'agent-skill-templates-name-files-create': agentSkillTemplatesNameFilesCreate,
-    'agent-skill-templates-name-files-destroy': agentSkillTemplatesNameFilesDestroy,
-    'agent-skill-templates-name-files-rename-create': agentSkillTemplatesNameFilesRenameCreate,
-    'agent-skill-templates-name-publish-create': agentSkillTemplatesNamePublishCreate,
-    'agent-skill-templates-name-retrieve': agentSkillTemplatesNameRetrieve,
-    'agent-skill-templates-name-usages-list': agentSkillTemplatesNameUsagesList,
-    'agent-skill-templates-name-versions-list': agentSkillTemplatesNameVersionsList,
 }

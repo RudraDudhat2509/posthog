@@ -14,13 +14,18 @@ import { z } from 'zod'
 
 import {
     AgentApplication,
+    createLogger,
     HttpFetcher,
     IdentityStore,
     IntegrationStore,
     SessionPrincipal,
     SessionQueue,
+    SLACK_BOT_TOKEN_KEY,
     SLACK_SIGNING_SECRET_KEY,
+    SlackSigningSecretResolver,
 } from '@posthog/agent-shared'
+
+const log = createLogger('slack-trigger')
 
 import { bridgeSlackToPosthogUser } from '../auth/slack-posthog-bridge'
 import { applyElevationDecline, applyElevationGrant, authorizeGrant } from '../enqueue/acl'
@@ -30,16 +35,6 @@ import { RevisionResolver } from '../routing/resolver'
 import { hasTrigger, resolveAgent } from './resolve'
 import { SlackEventBodySchema } from './slack.schemas'
 import type { TriggerModule } from './types'
-
-/**
- * Resolves a secret named by `secretKey` (conventional, from
- * `TRIGGER_REQUIRED_SECRETS`) out of the agent's `encrypted_env`. The concrete
- * impl decrypts via `EncryptedFields`; the harness wires an in-memory
- * fallback. Pattern reusable for any future "trigger-needs-secret" wiring.
- */
-export interface SlackSigningSecretResolver {
-    resolve(secretKey: string, application: AgentApplication): Promise<string | null>
-}
 
 export interface SlackTriggerDeps {
     resolver: RevisionResolver
@@ -126,14 +121,133 @@ export function slackRouter(deps: SlackTriggerDeps): Router {
 
             // Workspace trust check. trusted_workspaces is required in the spec:
             // an array gates on membership; `"*"` opens to any workspace.
-            const trusted =
+            const slackConfig =
                 slackTrigger && 'config' in slackTrigger
-                    ? (slackTrigger.config as { trusted_workspaces?: string[] | '*' }).trusted_workspaces
-                    : undefined
+                    ? (slackTrigger.config as {
+                          trusted_workspaces?: string[] | '*'
+                          mention_only?: boolean
+                          auto_resume_threads?: boolean
+                          allow_workspace_participants?: boolean
+                      })
+                    : ({} as {
+                          trusted_workspaces?: string[] | '*'
+                          mention_only?: boolean
+                          auto_resume_threads?: boolean
+                          allow_workspace_participants?: boolean
+                      })
+            const trusted = slackConfig.trusted_workspaces
             const workspaceId = event.team ?? 'unknown'
             if (trusted !== '*' && (!Array.isArray(trusted) || !trusted.includes(workspaceId))) {
                 res.status(403).json({ error: 'workspace_not_trusted', workspace: workspaceId })
                 return
+            }
+
+            // mention_only / auto_resume_threads gate. Run BEFORE identity
+            // resolution + the slack→posthog bridge so we don't pay an
+            // identity-store write per dropped event when the bot is in a
+            // busy channel.
+            //
+            // Semantics:
+            //   - app_mention → always accepted (explicit @ to the bot).
+            //   - message + mention_only=false → accepted (back-compat with
+            //     bots that watch whole channels by design).
+            //   - message + mention_only=true + auto_resume_threads=false →
+            //     dropped. Plain channel chatter is noise.
+            //   - message + mention_only=true + auto_resume_threads=true →
+            //     accepted ONLY when thread_ts matches an existing session's
+            //     external_key (so the conversation continues without
+            //     re-@-mentioning every turn). Anything else dropped.
+            //
+            // The findByExternalKey lookup is a single indexed PG read against
+            // `agent_session` — same cost as the existing /send resume path.
+            const isAppMention = event.type === 'app_mention'
+            const mentionOnly = slackConfig.mention_only ?? false
+            const autoResumeThreads = slackConfig.auto_resume_threads ?? false
+            // When set, any user in a trusted workspace may advance an open
+            // thread — waive the per-session owner ACL on resume. The
+            // trusted_workspaces gate above already authorized the workspace.
+            const allowWorkspaceParticipants = slackConfig.allow_workspace_participants ?? false
+            const ackReaction = (slackConfig as { ack_reaction?: string }).ack_reaction
+            // We need `externalKey` for both the gate and the enqueue below;
+            // compute it once.
+            const externalKey = `slack:${event.channel}:${event.thread_ts ?? event.ts}`
+            // For non-mention events: track whether we're accepting because
+            // the message is a reply in a thread the bot already owns. The
+            // seed message surfaces this so the model can judge whether the
+            // user is actually talking to it.
+            let resumedOwnedThread = false
+            // Single trace line per inbound event covers the discoverable
+            // state (slug + event type + thread + config flags) so a "why
+            // didn't my bot react?" question can be answered from a single
+            // grep. Debug-level — production traffic shouldn't spam the
+            // info channel, but local dev runs at debug by default.
+            log.debug(
+                {
+                    slug: resolved.application.slug,
+                    event_type: event.type,
+                    is_app_mention: isAppMention,
+                    channel: event.channel,
+                    thread_ts: event.thread_ts ?? null,
+                    mention_only: mentionOnly,
+                    auto_resume_threads: autoResumeThreads,
+                    ack_reaction: ackReaction ?? null,
+                },
+                'slack_event_received'
+            )
+            if (!isAppMention && mentionOnly) {
+                if (!autoResumeThreads || !event.thread_ts) {
+                    log.info(
+                        { slug: resolved.application.slug, channel: event.channel, ts: event.ts },
+                        'slack_event_dropped_mention_only'
+                    )
+                    res.json({ ok: true, dropped: 'mention_only' })
+                    return
+                }
+                const existing = await deps.queue.findByExternalKey(resolved.application.id, externalKey)
+                if (!existing) {
+                    log.info(
+                        {
+                            slug: resolved.application.slug,
+                            channel: event.channel,
+                            thread_ts: event.thread_ts,
+                        },
+                        'slack_event_dropped_no_owned_thread'
+                    )
+                    res.json({ ok: true, dropped: 'mention_only_no_owned_thread' })
+                    return
+                }
+                resumedOwnedThread = true
+            }
+
+            // Fire-and-forget ack reaction. Posted to Slack right now — before
+            // identity resolution + enqueue — so the user sees the emoji land
+            // within Slack's 3s ack window even when the runner takes a
+            // moment to claim the session. Fails open: a revoked / missing
+            // bot token, a slack.com 5xx, a previously-reacted message
+            // (`already_reacted`), or a missing channel must NOT break the
+            // event handler. We `void` rather than `await` so reactions.add
+            // latency can't blow the ack window; the `.catch` logs and
+            // collapses every error path to a silent no-op so the session
+            // still enqueues.
+            if (ackReaction) {
+                void postAckReaction(deps, resolved.application, {
+                    channel: event.channel,
+                    ts: event.ts,
+                    name: ackReaction,
+                }).catch((err) => {
+                    log.warn(
+                        {
+                            slug: resolved.application.slug,
+                            channel: event.channel,
+                            ts: event.ts,
+                            reaction: ackReaction,
+                            err: err instanceof Error ? err.message : String(err),
+                        },
+                        'ack_reaction_threw'
+                    )
+                })
+            } else {
+                log.debug({ slug: resolved.application.slug }, 'ack_reaction_not_configured')
             }
 
             // Identity resolution: same (workspace, user) tuple resolves to the
@@ -163,7 +277,6 @@ export function slackRouter(deps: SlackTriggerDeps): Router {
                 }
             }
 
-            const externalKey = `slack:${event.channel}:${event.thread_ts ?? event.ts}`
             const slackPrincipal: SessionPrincipal = {
                 kind: 'slack',
                 workspace_id: workspaceId,
@@ -176,6 +289,13 @@ export function slackRouter(deps: SlackTriggerDeps): Router {
             // route replies back to the originating channel/thread. The header
             // is parseable + greppable; agent.md tells the model to use the
             // values verbatim for any reactions.add / chat.postMessage call.
+            //
+            // `mention: true|false` tells the model whether THIS turn was an
+            // explicit @-mention. Only emitted as `false` when the trigger
+            // accepted a non-mention message via `auto_resume_threads` — the
+            // user might be replying to the bot OR continuing a sidebar with
+            // another human in the thread; the model has to judge intent
+            // from the text + thread history before responding.
             const slackContext = [
                 `[slack]`,
                 `channel: ${event.channel}`,
@@ -183,6 +303,8 @@ export function slackRouter(deps: SlackTriggerDeps): Router {
                 `thread_ts: ${event.thread_ts ?? event.ts}`,
                 `workspace: ${workspaceId}`,
                 `user: ${event.user}`,
+                `mention: ${isAppMention ? 'true' : 'false'}`,
+                ...(resumedOwnedThread ? ['resumed_owned_thread: true'] : []),
                 ``,
                 event.text ?? '',
             ].join('\n')
@@ -209,15 +331,42 @@ export function slackRouter(deps: SlackTriggerDeps): Router {
                     },
                     principal: slackPrincipal,
                     trigger: 'slack',
+                    // Owner-only by default; when the agent opts into
+                    // workspace-wide participation, any trusted-workspace user
+                    // (already gated above) may advance the thread.
+                    bypassOwnerAcl: allowWorkspaceParticipants,
                     requesterDisplay: `slack:${workspaceId}:${event.user}`,
+                    // Stash the originating thread coordinates so the runner
+                    // can post a sanitized failure reply if the session dies
+                    // before the agent can answer (see FailureNotifier). The
+                    // model also reads channel/thread_ts from the seed text
+                    // for happy-path replies via the `slack` tool — this is
+                    // for the unhappy path only.
+                    triggerMetadata: {
+                        type: 'slack',
+                        workspace_id: workspaceId,
+                        channel: event.channel,
+                        ts: event.ts,
+                        thread_ts: event.thread_ts ?? event.ts,
+                    },
                 }
             )
             if (outcome.kind === 'elevation_required') {
-                // Slack expects 200 on the events callback — retrying with the
-                // same payload would just re-record the elevation request. The
-                // v1 elevation message (Slack blocks + interactivity handler)
-                // lands here; for now we just acknowledge and let the audit
-                // trail on the session row carry the rejection.
+                // Owner-only thread: a different user posted into a session they
+                // don't own. The message is parked as an elevation request (see
+                // enqueueOrResume); tell them in-thread why nothing happened
+                // rather than silently 200ing. Awaited so the reply lands before
+                // we ack, but fully error-swallowed so it can never break the
+                // 200 Slack needs within its retry window. To open the thread to
+                // everyone in the workspace, set
+                // `slack.config.allow_workspace_participants: true`.
+                await postThreadMessage(deps, resolved.application, {
+                    channel: event.channel,
+                    thread_ts: event.thread_ts ?? event.ts,
+                    text:
+                        'I can only act on messages from the person who started this thread. ' +
+                        '@-mention me in a new message to start your own.',
+                })
                 res.json({
                     ok: true,
                     session_id: outcome.sessionId,
@@ -383,6 +532,137 @@ interface SlackInteractivityPayload {
     team?: { id?: string }
     user?: { id?: string; team_id?: string }
     actions?: Array<{ action_id?: string; value?: string }>
+}
+
+/**
+ * Fire-and-forget `reactions.add` for the immediate-ack flow. Called from
+ * the events handler when `slack.config.ack_reaction` is set; the surrounding
+ * `void ... .catch(...)` collapses every error path to a silent no-op so
+ * the session enqueue is never blocked. Resolves the bot token through the
+ * same per-app encrypted_env resolver that handles the signing secret; if
+ * the token is missing, drop the reaction silently (the agent might be
+ * partway through punch-out, the gate is `mention_only`/auth — not this
+ * cosmetic ack).
+ */
+async function postAckReaction(
+    deps: SlackTriggerDeps,
+    application: AgentApplication,
+    opts: { channel: string; ts: string; name: string }
+): Promise<void> {
+    const token = await deps.signingSecretResolver.resolve(SLACK_BOT_TOKEN_KEY, application)
+    if (!token) {
+        // The most common failure mode: SLACK_BOT_TOKEN isn't in
+        // encrypted_env yet (user wired the trigger before running the
+        // punch-out). Log at warn so a stuck "why no emoji?" is one grep
+        // away from the answer.
+        log.warn({ slug: application.slug, reaction: opts.name }, 'ack_reaction_no_bot_token')
+        return
+    }
+    // Skip if no HttpFetcher is wired. Production always passes one via
+    // buildApp → triggerDeps.http; the harness opts into wiring per test so
+    // an unsuspecting case doesn't accidentally hit real slack.com. The
+    // outer `.catch` already guards against errors; this guard makes the
+    // success path of the unconfigured case explicit (no-op).
+    if (!deps.http) {
+        log.warn({ slug: application.slug, reaction: opts.name }, 'ack_reaction_no_http_client')
+        return
+    }
+    log.debug(
+        { slug: application.slug, channel: opts.channel, ts: opts.ts, reaction: opts.name },
+        'ack_reaction_posting'
+    )
+    const res = await deps.http.fetch('https://slack.com/api/reactions.add', {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json; charset=utf-8',
+        },
+        body: JSON.stringify({ channel: opts.channel, timestamp: opts.ts, name: opts.name }),
+    })
+    // Slack returns 200 + `{ ok: false, error: ... }` for application-level
+    // failures (`channel_not_found`, `already_reacted`, `not_in_channel`,
+    // invalid token, etc.) — distinct from HTTP transport failures.
+    // Parse + log both shapes so the user can tell which side the failure
+    // came from. `already_reacted` is a normal outcome on Slack retries and
+    // doesn't need to look like an error in the log; everything else is a
+    // warning. We swallow all of them (the outer .catch guards too).
+    let body: { ok?: boolean; error?: string } = {}
+    try {
+        body = (await res.json()) as { ok?: boolean; error?: string }
+    } catch {
+        // Non-JSON response — Slack hiccup / network proxy. Treat as failure.
+    }
+    if (!res.ok || body.ok === false) {
+        const isAlreadyReacted = body.error === 'already_reacted'
+        const fields = {
+            slug: application.slug,
+            channel: opts.channel,
+            ts: opts.ts,
+            reaction: opts.name,
+            status: res.status,
+            slack_error: body.error ?? null,
+        }
+        if (isAlreadyReacted) {
+            log.debug(fields, 'ack_reaction_already_reacted')
+        } else {
+            log.warn(fields, 'ack_reaction_failed')
+        }
+        return
+    }
+    log.info({ slug: application.slug, channel: opts.channel, ts: opts.ts, reaction: opts.name }, 'ack_reaction_ok')
+}
+
+/**
+ * Post a plain text reply into a thread using the agent's bot token. Used to
+ * tell a rejected non-owner (owner-only threads) why their message did
+ * nothing, instead of silently 200ing the event. Resolves the bot token via
+ * the same per-app encrypted_env resolver as the ack reaction; errors are
+ * swallowed (a missing token / unwired http / slack.com hiccup must not break
+ * the event ack). Returns true if the message was posted.
+ */
+async function postThreadMessage(
+    deps: SlackTriggerDeps,
+    application: AgentApplication,
+    opts: { channel: string; thread_ts: string; text: string }
+): Promise<boolean> {
+    const token = await deps.signingSecretResolver.resolve(SLACK_BOT_TOKEN_KEY, application)
+    if (!token || !deps.http) {
+        log.warn(
+            { slug: application.slug, has_token: Boolean(token), has_http: Boolean(deps.http) },
+            'thread_message_skipped'
+        )
+        return false
+    }
+    try {
+        const res = await deps.http.fetch('https://slack.com/api/chat.postMessage', {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json; charset=utf-8',
+            },
+            body: JSON.stringify({ channel: opts.channel, thread_ts: opts.thread_ts, text: opts.text }),
+        })
+        let body: { ok?: boolean; error?: string } = {}
+        try {
+            body = (await res.json()) as { ok?: boolean; error?: string }
+        } catch {
+            // Non-JSON response — treat as failure but don't throw.
+        }
+        if (!res.ok || body.ok === false) {
+            log.warn(
+                { slug: application.slug, channel: opts.channel, status: res.status, slack_error: body.error ?? null },
+                'thread_message_failed'
+            )
+            return false
+        }
+        return true
+    } catch (err) {
+        log.warn(
+            { slug: application.slug, channel: opts.channel, err: err instanceof Error ? err.message : String(err) },
+            'thread_message_threw'
+        )
+        return false
+    }
 }
 
 /**

@@ -2,6 +2,7 @@
 // at build time by scripts/copy-instructions.ts (canonical source:
 // docs/agent-platform/playbooks/) and bundled via the wrangler `**/*.md` Text rule.
 import authoringNewAgents from '@shared/playbooks/authoring-new-agents.md'
+import choosingTheModel from '@shared/playbooks/choosing-the-model.md'
 import costAndQuotaAnalysis from '@shared/playbooks/cost-and-quota-analysis.md'
 import debuggingSessions from '@shared/playbooks/debugging-sessions.md'
 import designingMcpSurfaces from '@shared/playbooks/designing-mcp-surfaces.md'
@@ -11,6 +12,7 @@ import readingAnAgent from '@shared/playbooks/reading-an-agent.md'
 import runningAndEvaluatingTests from '@shared/playbooks/running-and-evaluating-tests.md'
 import safetyAndBoundaries from '@shared/playbooks/safety-and-boundaries.md'
 import secretsAndIntegrations from '@shared/playbooks/secrets-and-integrations.md'
+import settingUpSlackApp from '@shared/playbooks/setting-up-slack-app.md'
 import usingTheConsoleUi from '@shared/playbooks/using-the-console-ui.md'
 import usingTheRegistry from '@shared/playbooks/using-the-registry.md'
 import workingOutsideTheConsole from '@shared/playbooks/working-outside-the-console.md'
@@ -29,7 +31,9 @@ const PLAYBOOK_CONTENT: Record<PlaybookId, string> = {
     'debugging-sessions': debuggingSessions,
     'editing-agents-safely': editingAgentsSafely,
     'authoring-new-agents': authoringNewAgents,
+    'choosing-the-model': choosingTheModel,
     'secrets-and-integrations': secretsAndIntegrations,
+    'setting-up-slack-app': settingUpSlackApp,
     'designing-mcp-surfaces': designingMcpSurfaces,
     'running-and-evaluating-tests': runningAndEvaluatingTests,
     'using-the-console-ui': usingTheConsoleUi,

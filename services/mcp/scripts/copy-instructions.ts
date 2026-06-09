@@ -15,20 +15,28 @@ const PROMPTS = [
     },
     {
         // Operator playbooks for the agent platform — embedded so the
-        // `agent-resolve-resource` tool can serve them. Single source shared with
-        // the agent concierge bundle (services/agent-tests/.../agent-concierge).
-        src: 'docs/agent-platform/playbooks',
+        // `agent-resolve-resource` tool can serve them. Single source is the
+        // agent concierge bundle's skills dir (the same files the concierge loads).
+        src: 'services/agent-tests/src/examples/agent-concierge/skills',
         dest: 'shared/playbooks',
     },
 ]
 
-for (const prompt of PROMPTS) {
-    const src = resolve(REPO_ROOT, prompt.src)
-    const dest = resolve(ROOT_DIR, prompt.dest)
-    mkdirSync(dirname(dest), { recursive: true })
-    // Belt-and-braces: Node 24's `cpSync` has been observed to throw EEXIST
-    // even with `force: true` on some platforms (notably macOS). Explicitly
-    // remove the dest first so watch-mode rebuilds always succeed.
-    rmSync(dest, { force: true, recursive: true })
-    cpSync(src, dest, { recursive: true, force: true })
+export function copyInstructions(): void {
+    for (const prompt of PROMPTS) {
+        const src = resolve(REPO_ROOT, prompt.src)
+        const dest = resolve(ROOT_DIR, prompt.dest)
+        mkdirSync(dirname(dest), { recursive: true })
+        // Belt-and-braces: Node 24's `cpSync` has been observed to throw EEXIST
+        // even with `force: true` on some platforms (notably macOS). Explicitly
+        // remove the dest first so watch-mode rebuilds always succeed.
+        rmSync(dest, { force: true, recursive: true })
+        cpSync(src, dest, { recursive: true, force: true })
+    }
+}
+
+// Run when invoked directly (wrangler build command, lint-staged); skipped when
+// imported (build-hono.ts calls copyInstructions() itself).
+if (process.argv[1]?.endsWith('copy-instructions.ts')) {
+    copyInstructions()
 }

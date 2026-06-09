@@ -28,9 +28,8 @@ import { Express } from 'express'
 import { Pool } from 'pg'
 import request from 'supertest'
 
-import { AuthProvider, buildApp, SessionEventBus, SlackSigningSecretResolver } from '@posthog/agent-ingress'
+import { AuthProvider, buildApp, SessionEventBus } from '@posthog/agent-ingress'
 import { buildJanitorApp } from '@posthog/agent-janitor'
-import { reset } from '@posthog/agent-migrations'
 import { IntegrationHostValidator, IsAskerInApproverScope, McpTransportFactory, Worker } from '@posthog/agent-runner'
 import type { IdentityStore, LogEntry } from '@posthog/agent-shared'
 import {
@@ -52,13 +51,16 @@ import {
     RedisSessionEventBus,
     S3BundleStore,
     S3JsonlTabularStore,
+    EncryptedEnvSlackSecretResolver,
     EncryptedFields,
     HttpClient,
     S3MemoryStore,
     SecretBroker,
+    SlackSigningSecretResolver,
     TEST_S3_BUCKET,
     wipeTestPrefix as wipeMemoryTestPrefix,
 } from '@posthog/agent-shared'
+import { reset } from '@posthog/agent-shared/testing'
 import { setPosthogInternalClient } from '@posthog/agent-tools'
 
 import { buildFauxModel, ScriptedTurn } from './faux'
@@ -361,25 +363,13 @@ export async function buildCluster(opts: BuildClusterOpts = {}): Promise<Cluster
         posthogApiBaseUrl: 'http://localhost:8010',
     })
 
-    // Real-flow Slack signing secret resolver: decrypts the agent's
-    // `encrypted_env` via the same `EncryptedFields` key the credential broker
-    // uses, then plucks the requested key. Tests populate `encrypted_env` on
+    // Real-flow Slack secret resolver: decrypts the agent's `encrypted_env`
+    // via the same `EncryptedFields` key the credential broker uses, then
+    // plucks the requested key. Tests populate `encrypted_env` on
     // `deployAgent` to wire a secret per agent — same path production uses.
     const encryption = new EncryptedFields(HARNESS_ENCRYPTION_SALT_KEYS)
-    const slackSigningSecretResolver: SlackSigningSecretResolver = opts.slackSigningSecretResolver ?? {
-        async resolve(secretKey, application): Promise<string | null> {
-            if (!application.encrypted_env) {
-                return null
-            }
-            try {
-                const env = encryption.decryptJsonEnv(application.encrypted_env)
-                const value = env[secretKey]
-                return typeof value === 'string' && value.length > 0 ? value : null
-            } catch {
-                return null
-            }
-        },
-    }
+    const slackSigningSecretResolver: SlackSigningSecretResolver =
+        opts.slackSigningSecretResolver ?? new EncryptedEnvSlackSecretResolver(encryption)
 
     const ingress = buildApp({
         revisions,
@@ -393,6 +383,10 @@ export async function buildCluster(opts: BuildClusterOpts = {}): Promise<Cluster
         authProvider: opts.authProvider,
         identities,
         credentialBroker,
+        // Same `http` the worker uses, so tests asserting on outbound
+        // slack.com calls from the ingress (ack_reaction, identity bridge)
+        // can route them through a single recorder.
+        http: opts.http,
     })
 
     const janitor = buildJanitorApp({
@@ -470,6 +464,17 @@ export async function buildCluster(opts: BuildClusterOpts = {}): Promise<Cluster
                     { type: 'webhook', config: { path: '/webhook' } },
                     { type: 'mcp', config: {} },
                 ],
+                // Test-side default: opt into public exposure so cases that
+                // don't care about auth still get a working request flow
+                // through the default PUBLIC_ONLY_AUTH_PROVIDER. The
+                // runtime default (in AgentSpecSchema) is `posthog_internal`
+                // — production specs that omit `auth` are closed by
+                // default. We diverge here because the harness's
+                // `PUBLIC_ONLY_AUTH_PROVIDER` can't verify anything else
+                // without an explicit `fakeAuthProvider({...})` wired in.
+                // Tests exercising real auth modes pass their own
+                // `spec.auth` and override this.
+                auth: { modes: [{ type: 'public', acknowledge_public_exposure: true }] },
                 ...input.spec,
             })
             const rev = await revisions.createRevision({

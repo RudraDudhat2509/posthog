@@ -40,7 +40,7 @@ class JanitorClientError(Exception):
 
 
 class JanitorClient:
-    def __init__(self, base_url: str | None = None, timeout: float = 30.0) -> None:
+    def __init__(self, base_url: str | None = None, timeout: float = 120.0) -> None:
         # Default matches `bin/mprocs.yaml`'s janitor `PORT=${AGENT_JANITOR_PORT:-3031}`.
         # Keep these two in lockstep — Django + janitor must agree on the URL
         # for the bundle proxy to work in dev without explicit env wiring.
@@ -80,29 +80,51 @@ class JanitorClient:
     def manifest(self, revision_id: str) -> dict:
         return self._call("GET", f"/revisions/{revision_id}/manifest")
 
-    def get_file(self, revision_id: str, path: str) -> dict:
-        return self._call("GET", f"/revisions/{revision_id}/file", params={"path": path})
+    def slack_manifest(self, revision_id: str, *, events_url: str | None, interactivity_url: str | None) -> dict:
+        params: dict[str, str] = {}
+        if events_url:
+            params["events_url"] = events_url
+        if interactivity_url:
+            params["interactivity_url"] = interactivity_url
+        return self._call("GET", f"/revisions/{revision_id}/slack-manifest", params=params)
 
-    def put_file(self, revision_id: str, path: str, content: str) -> dict:
-        return self._call(
-            "PUT",
-            f"/revisions/{revision_id}/file",
-            params={"path": path},
-            json={"content": content},
-        )
-
-    def delete_file(self, revision_id: str, path: str) -> dict:
-        return self._call("DELETE", f"/revisions/{revision_id}/file", params={"path": path})
+    # ── typed bundle authoring API ─────────────────────────────────────────
+    # See docs/agent-platform/plans/typed-bundle-authoring-api.md.
+    # The legacy file-grain methods (get_file / put_file / delete_file /
+    # put_bundle with mode) were removed; authors now write typed resources
+    # (agent_md, skills/<id>, tools/<id>) and the janitor translates to
+    # canonical S3 paths under the hood.
 
     def get_bundle(self, revision_id: str) -> dict:
+        """Read the full typed bundle: { agent_md, skills, tools, spec }."""
         return self._call("GET", f"/revisions/{revision_id}/bundle")
 
-    def put_bundle(self, revision_id: str, files: dict[str, str], mode: str = "replace") -> dict:
-        return self._call(
-            "PUT",
-            f"/revisions/{revision_id}/bundle",
-            json={"files": files, "mode": mode},
-        )
+    def put_bundle(self, revision_id: str, bundle: dict) -> dict:
+        """Full-replace the typed bundle. `bundle` carries agent_md, skills,
+        tools, spec — resources NOT in the payload are deleted."""
+        return self._call("PUT", f"/revisions/{revision_id}/bundle", json=bundle)
+
+    def put_agent_md(self, revision_id: str, content: str) -> dict:
+        return self._call("PUT", f"/revisions/{revision_id}/agent_md", json={"content": content})
+
+    def put_spec(self, revision_id: str, spec: dict) -> dict:
+        """Replace the author-facing spec slice (no skills[] / tools[])."""
+        return self._call("PUT", f"/revisions/{revision_id}/spec", json={"spec": spec})
+
+    def put_skill(self, revision_id: str, skill_id: str, skill: dict) -> dict:
+        """Upsert one skill. `skill` carries { description, body, files? }."""
+        return self._call("PUT", f"/revisions/{revision_id}/skills/{skill_id}", json=skill)
+
+    def delete_skill(self, revision_id: str, skill_id: str) -> dict:
+        return self._call("DELETE", f"/revisions/{revision_id}/skills/{skill_id}")
+
+    def put_tool(self, revision_id: str, tool_id: str, tool: dict) -> dict:
+        """Upsert one tool. Triggers AST shape check + esbuild compile on
+        the janitor side. `tool` carries { description, args_schema, source }."""
+        return self._call("PUT", f"/revisions/{revision_id}/tools/{tool_id}", json=tool)
+
+    def delete_tool(self, revision_id: str, tool_id: str) -> dict:
+        return self._call("DELETE", f"/revisions/{revision_id}/tools/{tool_id}")
 
     def freeze(self, revision_id: str) -> dict:
         return self._call("POST", f"/revisions/{revision_id}/freeze")
@@ -218,6 +240,26 @@ class JanitorClient:
         if offset is not None:
             params["offset"] = offset
         return self._call("GET", "/approvals", params=params)
+
+    def list_approvals_for_team(
+        self,
+        team_id: int,
+        *,
+        application_id: str | None = None,
+        state: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> dict:
+        params: dict[str, Any] = {"team_id": team_id}
+        if application_id:
+            params["application_id"] = application_id
+        if state:
+            params["state"] = state
+        if limit is not None:
+            params["limit"] = limit
+        if offset is not None:
+            params["offset"] = offset
+        return self._call("GET", "/fleet/approvals", params=params)
 
     def get_approval(self, approval_id: str) -> dict:
         return self._call("GET", f"/approvals/{approval_id}")

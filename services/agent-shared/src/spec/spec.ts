@@ -10,11 +10,95 @@ import { z } from 'zod'
 export const ModelIdSchema = z.string().min(1)
 
 export const TriggerSchema = z.discriminatedUnion('type', [
+    /**
+     * Slack trigger. These spec flags only control what the INGRESS does with
+     * an event once Slack delivers it — they cannot make Slack send an event
+     * it isn't subscribed to. For the agent to behave as configured, the Slack
+     * app itself must be set up to match:
+     *
+     *   - Event Subscriptions → Request URL points at the agent's
+     *     `slack_events_url`. Interactivity (approval buttons) →
+     *     `slack_interactivity_url`.
+     *   - Subscribe to bot events:
+     *       - `app_mention` — required for @-mention triggering.
+     *       - `message.channels` / `message.groups` / `message.im` /
+     *         `message.mpim` — required for ANY non-mention message to arrive
+     *         (i.e. for `mention_only: false`, or for `auto_resume_threads`
+     *         thread follow-ups). If the app only subscribes to `app_mention`,
+     *         setting `mention_only: false` changes nothing — Slack never
+     *         sends the plain messages.
+     *   - OAuth scopes: `app_mentions:read`, `chat:write`, `reactions:write`
+     *     (for `ack_reaction` + replies), and `channels:history` /
+     *     `groups:history` to receive `message.*` events.
+     *   - The bot user must be a MEMBER of each channel — Slack only delivers
+     *     `message.*` events for channels the bot has joined.
+     *   - `SLACK_SIGNING_SECRET` (verify inbound) and `SLACK_BOT_TOKEN` (call
+     *     Slack APIs) must be set in the agent's encrypted env.
+     *
+     * The session key is always the thread: `slack:<channel>:<thread_ts>`
+     * (the opening @-mention's `ts` becomes the thread root). Every later
+     * event in that thread resumes the same session.
+     */
     z.object({
         type: z.literal('slack'),
         config: z.object({
             channel_id: z.string().optional(),
+            /**
+             * When true, only `app_mention` events (the bot was @-mentioned)
+             * are routed into a session. Plain `message` events delivered by
+             * Slack — e.g. because the bot subscribed to `message.channels` —
+             * are dropped at the trigger. Default false to preserve historical
+             * "react to anything in the channel" behaviour for bots that
+             * already shipped without the gate.
+             *
+             * Recommended setup for "@-mention to start, then converse in the
+             * thread": `mention_only: true` + `auto_resume_threads: true`.
+             */
             mention_only: z.boolean().default(false),
+            /**
+             * Relaxes `mention_only` for replies in threads where the bot
+             * already holds an open session — i.e. the user @-mentioned the
+             * bot to start the thread, and is now continuing the conversation
+             * without re-@-mentioning every turn. Implemented as: when
+             * `mention_only` is true, the trigger normally drops non-mention
+             * `message` events; with `auto_resume_threads`, those events ARE
+             * routed when `thread_ts` matches an existing session's
+             * external_key. Sessions seeded this way are flagged as
+             * `mention: false` in the seed message so the model can judge
+             * whether the message is actually addressed to it. No effect when
+             * `mention_only` is false (everything's already accepted). Default
+             * false for back-compat.
+             */
+            auto_resume_threads: z.boolean().default(false),
+            /**
+             * Who may advance a thread once it's open. Every Slack session is
+             * owned by the principal who opened it (the @-mentioner). By
+             * default (`false`) only that user can drive the thread: a reply
+             * from a different Slack user fails the per-session ACL check and
+             * is recorded as an elevation request rather than advancing the
+             * session.
+             *
+             * Set `true` to let ANY user in a `trusted_workspaces` workspace
+             * post into the thread and advance the session — a shared/team
+             * concierge thread where colleagues chime in. The `trusted_workspaces`
+             * gate still applies (untrusted workspaces are rejected upstream),
+             * and every message still records its real sender for audit; this
+             * only waives the "same user as the owner" requirement. Default
+             * false (owner-only).
+             */
+            allow_workspace_participants: z.boolean().default(false),
+            /**
+             * Emoji name (no surrounding colons, e.g. `"eyes"` or
+             * `"thinking_face"`) that the ingress posts as an immediate
+             * `reactions.add` against the inbound message, BEFORE returning
+             * the event ack to Slack. Gives the user feedback within Slack's
+             * 3s window even when the runner takes longer to claim the
+             * session + produce a first turn. Fire-and-forget: failures
+             * (revoked token, channel-not-found, already-reacted) are
+             * silently swallowed — the gate is "session enqueued", not
+             * "reaction landed". When unset, no ack reaction.
+             */
+            ack_reaction: z.string().optional(),
             /**
              * Required. Workspaces (Slack team ids, e.g. "T01ABC") allowed to
              * invoke this agent. Use the literal string `"*"` to opt into an
@@ -220,11 +304,17 @@ export const ToolRefSchema = z.discriminatedUnion('kind', [
          */
         required: z.boolean().default(false),
         /**
-         * Per-call timeout in ms. Default 5s — UI tools should answer in
-         * <100ms; if they don't, the user closed the tab or follow-mode
-         * is off. Author may raise for slower client operations.
+         * Per-call timeout in ms. Only consulted when `interactive` is
+         * false; interactive tools park the session persistently and
+         * have no in-process timeout. Default 5s for sync UI tools.
          */
-        timeout_ms: z.number().int().positive().max(60_000).default(5_000),
+        timeout_ms: z.number().int().positive().max(600_000).default(5_000),
+        /**
+         * Park the session and resume on `/send` (client_tool_result
+         * variant) instead of awaiting the bus result in-process. Use
+         * for render-style tools whose UI needs unbounded user time.
+         */
+        interactive: z.boolean().default(false),
     }),
 ])
 
@@ -381,6 +471,9 @@ export const SpecLimitsSchema = z.object({
      * (image processing, parsing, anything CPU-pinned).
      */
     max_cpu_cores: z.number().positive().default(0.25),
+    // Per-turn provider max_tokens. Unset → reasoning-aware default in runner.
+    // Clamped at request time to model.maxTokens + operator override.
+    max_output_tokens: z.number().int().positive().max(200_000).optional(),
 })
 
 /**
@@ -395,8 +488,23 @@ export const SpecLimitsSchema = z.object({
  * time — never persisted, never on the principal).
  */
 export const AuthModeSchema = z.discriminatedUnion('type', [
-    /** Anonymous — no auth required. */
-    z.object({ type: z.literal('public') }),
+    /**
+     * Anonymous — no auth required. **Every** request resolves to an
+     * anonymous principal. Genuinely-public agents are rare (a docs
+     * site embed, a marketing chatbot). To opt in, the author MUST
+     * set `acknowledge_public_exposure: true` — the field exists to
+     * make the choice deliberate at spec-authoring time and to give
+     * the UI a single flag to render a loud warning against. Skill
+     * authoring tools (concierge) treat this as a hard-pause decision
+     * point: confirm with the user before adding it to a spec.
+     */
+    z.object({
+        type: z.literal('public'),
+        acknowledge_public_exposure: z.literal(true, {
+            message:
+                'public auth must set acknowledge_public_exposure: true. Public agents accept anonymous requests — confirm this is intentional. If you only need PostHog console / MCP access, use posthog_internal or pat instead.',
+        }),
+    }),
     /** PostHog OAuth bearer. Validated against `issuer`'s introspection
      *  endpoint (for `issuer: 'posthog'`, that's `/api/users/@me/`).
      *  Credential available to tools as target `posthog_api`. */
@@ -427,7 +535,12 @@ export const AuthModeSchema = z.discriminatedUnion('type', [
 
 export const AuthConfigSchema = z.object({
     /** Accepted auth modes. First successful match per request wins. */
-    modes: z.array(AuthModeSchema).default([{ type: 'public' }]),
+    /**
+     * Default is the closed `posthog_internal` mode (server-to-server
+     * platform tokens only). Public exposure is opt-in and requires
+     * `acknowledge_public_exposure: true` — see `AuthModeSchema`.
+     */
+    modes: z.array(AuthModeSchema).default([{ type: 'posthog_internal' }]),
 })
 
 export type AuthMode = z.infer<typeof AuthModeSchema>
@@ -522,7 +635,7 @@ export const AgentSpecSchema = z.object({
         max_cpu_cores: 0.25,
     }),
     entrypoint: z.string().default('agent.md'),
-    auth: AuthConfigSchema.default({ modes: [{ type: 'public' }] }),
+    auth: AuthConfigSchema.default({ modes: [{ type: 'posthog_internal' }] }),
     reasoning: ReasoningEffortSchema.optional(),
     framework_prompt: FrameworkPromptConfigSchema.optional(),
     resume: ResumeConfigSchema.optional(),

@@ -7,9 +7,19 @@
  * PostHog API - generated
  * OpenAPI spec version: 1.0.0
  */
+/**
+ * Resolved creator (id, first_name, email) from `created_by_id`, or null if unset or the user was deleted.
+ * @nullable
+ */
+export type AgentApplicationApiCreatedBy = {
+    readonly id?: number
+    readonly first_name?: string
+    readonly email?: string
+} | null
+
 export interface AgentApplicationApi {
     readonly id: string
-    readonly team: number
+    readonly team_id: number
     /** @maxLength 255 */
     name: string
     /** @maxLength 63 */
@@ -21,9 +31,24 @@ export interface AgentApplicationApi {
     /** @nullable */
     readonly archived_at: string | null
     /** @nullable */
-    readonly created_by: number | null
+    readonly created_by_id: number | null
+    /**
+     * Resolved creator (id, first_name, email) from `created_by_id`, or null if unset or the user was deleted.
+     * @nullable
+     */
+    readonly created_by: AgentApplicationApiCreatedBy
     readonly created_at: string
     readonly updated_at: string
+    /**
+     * Public URL to paste into the Slack app dashboard under Event Subscriptions → Request URL. Computed from `AGENT_INGRESS_PUBLIC_URL` + the agent slug. Null when the deployment has no public agent-ingress URL configured (e.g. local dev without a tunnel).
+     * @nullable
+     */
+    readonly slack_events_url: string | null
+    /**
+     * Public URL to paste into the Slack app dashboard under Interactivity & Shortcuts → Request URL. Same source + null behaviour as `slack_events_url`.
+     * @nullable
+     */
+    readonly slack_interactivity_url: string | null
 }
 
 export interface PaginatedAgentApplicationListApi {
@@ -182,6 +207,9 @@ export type AgentRevisionApiSpecTriggersItem =
           config: {
               channel_id?: string
               mention_only: boolean
+              auto_resume_threads: boolean
+              allow_workspace_participants: boolean
+              ack_reaction?: string
               trusted_workspaces: string[] | '*'
           }
       }
@@ -229,11 +257,35 @@ export type AgentRevisionApiSpecToolsItem =
     | {
           kind: 'native'
           id: string
+          requires_approval?: boolean
+          approval_policy?: {
+              /** @minItems 1 */
+              approvers?: ('team_admins' | 'session_principal')[]
+              allow_edit?: boolean
+              /**
+               * @minimum 60000
+               * @maximum 604800000
+               */
+              ttl_ms?: number
+              allow_agent_approver?: boolean
+          }
       }
     | {
           kind: 'custom'
           id: string
           path: string
+          requires_approval?: boolean
+          approval_policy?: {
+              /** @minItems 1 */
+              approvers?: ('team_admins' | 'session_principal')[]
+              allow_edit?: boolean
+              /**
+               * @minimum 60000
+               * @maximum 604800000
+               */
+              ttl_ms?: number
+              allow_agent_approver?: boolean
+          }
       }
     | {
           kind: 'custom_template'
@@ -252,9 +304,10 @@ export type AgentRevisionApiSpecToolsItem =
           required?: boolean
           /**
            * @minimum 1
-           * @maximum 60000
+           * @maximum 600000
            */
           timeout_ms?: number
+          interactive?: boolean
       }
 
 export type AgentRevisionApiSpecMcpsItemAuth = {
@@ -318,11 +371,17 @@ export type AgentRevisionApiSpecLimits = {
      * @exclusiveMinimum 0
      */
     max_wall_seconds: number
+    /**
+     * @maximum 200000
+     * @exclusiveMinimum 0
+     */
+    max_output_tokens?: number
 }
 
 export type AgentRevisionApiSpecAuthModesItem =
     | {
           type: 'public'
+          acknowledge_public_exposure: true
       }
     | {
           type: 'oauth'
@@ -366,6 +425,16 @@ export type AgentRevisionApiSpec = {
     reasoning?: AgentRevisionApiSpecReasoning
 }
 
+/**
+ * Resolved creator (id, first_name, email) from `created_by_id`, or null if unset or the user was deleted.
+ * @nullable
+ */
+export type AgentRevisionApiCreatedBy = {
+    readonly id?: number
+    readonly first_name?: string
+    readonly email?: string
+} | null
+
 export interface AgentRevisionApi {
     readonly id: string
     readonly application: string
@@ -378,7 +447,12 @@ export interface AgentRevisionApi {
     readonly bundle_sha256: string | null
     spec?: AgentRevisionApiSpec
     /** @nullable */
-    readonly created_by: number | null
+    readonly created_by_id: number | null
+    /**
+     * Resolved creator (id, first_name, email) from `created_by_id`, or null if unset or the user was deleted.
+     * @nullable
+     */
+    readonly created_by: AgentRevisionApiCreatedBy
     readonly created_at: string
     readonly updated_at: string
 }
@@ -398,6 +472,9 @@ export type PatchedAgentRevisionApiSpecTriggersItem =
           config: {
               channel_id?: string
               mention_only: boolean
+              auto_resume_threads: boolean
+              allow_workspace_participants: boolean
+              ack_reaction?: string
               trusted_workspaces: string[] | '*'
           }
       }
@@ -445,11 +522,35 @@ export type PatchedAgentRevisionApiSpecToolsItem =
     | {
           kind: 'native'
           id: string
+          requires_approval?: boolean
+          approval_policy?: {
+              /** @minItems 1 */
+              approvers?: ('team_admins' | 'session_principal')[]
+              allow_edit?: boolean
+              /**
+               * @minimum 60000
+               * @maximum 604800000
+               */
+              ttl_ms?: number
+              allow_agent_approver?: boolean
+          }
       }
     | {
           kind: 'custom'
           id: string
           path: string
+          requires_approval?: boolean
+          approval_policy?: {
+              /** @minItems 1 */
+              approvers?: ('team_admins' | 'session_principal')[]
+              allow_edit?: boolean
+              /**
+               * @minimum 60000
+               * @maximum 604800000
+               */
+              ttl_ms?: number
+              allow_agent_approver?: boolean
+          }
       }
     | {
           kind: 'custom_template'
@@ -468,9 +569,10 @@ export type PatchedAgentRevisionApiSpecToolsItem =
           required?: boolean
           /**
            * @minimum 1
-           * @maximum 60000
+           * @maximum 600000
            */
           timeout_ms?: number
+          interactive?: boolean
       }
 
 export type PatchedAgentRevisionApiSpecMcpsItemAuth = {
@@ -534,11 +636,17 @@ export type PatchedAgentRevisionApiSpecLimits = {
      * @exclusiveMinimum 0
      */
     max_wall_seconds: number
+    /**
+     * @maximum 200000
+     * @exclusiveMinimum 0
+     */
+    max_output_tokens?: number
 }
 
 export type PatchedAgentRevisionApiSpecAuthModesItem =
     | {
           type: 'public'
+          acknowledge_public_exposure: true
       }
     | {
           type: 'oauth'
@@ -593,6 +701,16 @@ export type PatchedAgentRevisionApiSpec = {
     reasoning?: PatchedAgentRevisionApiSpecReasoning
 }
 
+/**
+ * Resolved creator (id, first_name, email) from `created_by_id`, or null if unset or the user was deleted.
+ * @nullable
+ */
+export type PatchedAgentRevisionApiCreatedBy = {
+    readonly id?: number
+    readonly first_name?: string
+    readonly email?: string
+} | null
+
 export interface PatchedAgentRevisionApi {
     readonly id?: string
     readonly application?: string
@@ -605,34 +723,59 @@ export interface PatchedAgentRevisionApi {
     readonly bundle_sha256?: string | null
     spec?: PatchedAgentRevisionApiSpec
     /** @nullable */
-    readonly created_by?: number | null
+    readonly created_by_id?: number | null
+    /**
+     * Resolved creator (id, first_name, email) from `created_by_id`, or null if unset or the user was deleted.
+     * @nullable
+     */
+    readonly created_by?: PatchedAgentRevisionApiCreatedBy
     readonly created_at?: string
     readonly updated_at?: string
 }
 
-export type WriteBundleRequestApiFiles = { [key: string]: string }
+/**
+ * Body shape for PUT /revisions/<id>/agent_md/.
+ */
+export interface WriteAgentMdRequestApi {
+    content: string
+}
+
+export type WriteTypedBundleRequestApiSpec = { [key: string]: unknown }
+
+export interface _SkillFileApi {
+    path: string
+    content: string
+}
 
 /**
- * * `replace` - replace
- * `merge` - merge
+ * Body shape for PUT /revisions/<id>/skills/<skill_id>/.
  */
-export type WriteBundleRequestModeEnumApi =
-    (typeof WriteBundleRequestModeEnumApi)[keyof typeof WriteBundleRequestModeEnumApi]
+export interface WriteSkillRequestApi {
+    description: string
+    body: string
+    files?: _SkillFileApi[]
+}
 
-export const WriteBundleRequestModeEnumApi = {
-    Replace: 'replace',
-    Merge: 'merge',
-} as const
+export type WriteToolRequestApiArgsSchema = { [key: string]: unknown }
 
 /**
- * Body shape for PUT /revisions/<id>/bundle/ — the bulk upload.
-
-`files` is a `{path: utf-8 content}` map. `mode='replace'` wipes the
-existing bundle before writing the new set; `'merge'` upserts.
+ * Body shape for PUT /revisions/<id>/tools/<tool_id>/.
  */
-export interface WriteBundleRequestApi {
-    files: WriteBundleRequestApiFiles
-    mode?: WriteBundleRequestModeEnumApi
+export interface WriteToolRequestApi {
+    description: string
+    args_schema: WriteToolRequestApiArgsSchema
+    source: string
+}
+
+/**
+ * Body shape for PUT /revisions/<id>/bundle/ — the full-replace typed
+payload. See docs/agent-platform/plans/typed-bundle-authoring-api.md §3.
+ */
+export interface WriteTypedBundleRequestApi {
+    agent_md: string
+    skills?: WriteSkillRequestApi[]
+    tools?: WriteToolRequestApi[]
+    spec: WriteTypedBundleRequestApiSpec
 }
 
 /**
@@ -665,12 +808,32 @@ export interface AgentRevisionCronFireResponseApi {
     request_id: string
 }
 
+export interface AgentRevisionSlackManifestResponseApi {
+    revision_id: string
+    /** Slack app manifest (JSON) ready to paste into https://api.slack.com/apps?new_app=1 → 'From an app manifest'. Scopes and event subscriptions are derived from the agent's slack trigger config + tools. */
+    manifest: unknown
+    /** Reminders the manifest can't enforce (e.g. invite the bot to its channels). */
+    notes: string[]
+    /**
+     * The Event Subscriptions Request URL baked into the manifest.
+     * @nullable
+     */
+    events_url: string | null
+    /**
+     * The Interactivity Request URL (used by approval-gated tools).
+     * @nullable
+     */
+    interactivity_url: string | null
+}
+
+export type WriteSpecRequestApiSpec = { [key: string]: unknown }
+
 /**
- * Body shape for PUT /revisions/<id>/file/. `path` lives in the query
-string (matches the janitor wire format); `content` is the new file body.
+ * Body shape for PUT /revisions/<id>/spec/. The body's `spec` object
+is the author-facing slice (skills/tools are server-derived at freeze).
  */
-export interface WriteFileRequestApi {
-    content: string
+export interface WriteSpecRequestApi {
+    spec: WriteSpecRequestApiSpec
 }
 
 export interface AgentRevisionSystemPromptResponseApi {
@@ -707,9 +870,19 @@ export interface NewDraftRevisionRequestApi {
     source_revision_id: string
 }
 
+/**
+ * Resolved creator (id, first_name, email) from `created_by_id`, or null if unset or the user was deleted.
+ * @nullable
+ */
+export type PatchedAgentApplicationApiCreatedBy = {
+    readonly id?: number
+    readonly first_name?: string
+    readonly email?: string
+} | null
+
 export interface PatchedAgentApplicationApi {
     readonly id?: string
-    readonly team?: number
+    readonly team_id?: number
     /** @maxLength 255 */
     name?: string
     /** @maxLength 63 */
@@ -721,9 +894,24 @@ export interface PatchedAgentApplicationApi {
     /** @nullable */
     readonly archived_at?: string | null
     /** @nullable */
-    readonly created_by?: number | null
+    readonly created_by_id?: number | null
+    /**
+     * Resolved creator (id, first_name, email) from `created_by_id`, or null if unset or the user was deleted.
+     * @nullable
+     */
+    readonly created_by?: PatchedAgentApplicationApiCreatedBy
     readonly created_at?: string
     readonly updated_at?: string
+    /**
+     * Public URL to paste into the Slack app dashboard under Event Subscriptions → Request URL. Computed from `AGENT_INGRESS_PUBLIC_URL` + the agent slug. Null when the deployment has no public agent-ingress URL configured (e.g. local dev without a tunnel).
+     * @nullable
+     */
+    readonly slack_events_url?: string | null
+    /**
+     * Public URL to paste into the Slack app dashboard under Interactivity & Shortcuts → Request URL. Same source + null behaviour as `slack_events_url`.
+     * @nullable
+     */
+    readonly slack_interactivity_url?: string | null
 }
 
 /**
@@ -928,6 +1116,12 @@ export interface AgentApplicationPreviewTokenResponseApi {
     expires_in: number
     /** Slug to use in the ingress URL — `<application_slug>-<revision_uuid_hex>`. Identifies the exact revision in the path-routing prefix. */
     ingress_slug: string
+    /** Per-trigger ingress URLs the caller can hit directly, derived from the revision's `spec.triggers[]`. Shape: `{<trigger_type>: {<route_name>: <absolute_url>}}`. Only includes triggers the spec actually declares. Empty when `AGENT_INGRESS_PUBLIC_URL` is unset. */
+    endpoints: unknown
+    /** How to attach credentials to those endpoints: preview-token header/query names, the agent's `spec.auth.modes`, and a note about the live vs preview-mode gate split. Lets the caller wire auth without grepping the ingress source. */
+    auth: unknown
+    /** Server-side alternative — `/api/projects/<team>/agent_applications/<slug>/preview-proxy/<path>` mints the JWT for you. Strips caller Authorization, so it works for public-auth agents; agents with required auth need the direct endpoints above. */
+    preview_proxy: unknown
 }
 
 export interface AgentSessionUsageTotalApi {
@@ -1183,190 +1377,8 @@ export interface AgentAggregateStatsApi {
     lastActivityAt: string | null
     /** Sessions in `failed` state created within the window. */
     failedInWindowCount: number
-}
-
-/**
- * * `engineering` - Engineering
- * `data` - Data
- * `product` - Product Management
- * `founder` - Founder
- * `leadership` - Leadership
- * `marketing` - Marketing
- * `sales` - Sales / Success
- * `other` - Other
- */
-export type RoleAtOrganizationEnumApi = (typeof RoleAtOrganizationEnumApi)[keyof typeof RoleAtOrganizationEnumApi]
-
-export const RoleAtOrganizationEnumApi = {
-    Engineering: 'engineering',
-    Data: 'data',
-    Product: 'product',
-    Founder: 'founder',
-    Leadership: 'leadership',
-    Marketing: 'marketing',
-    Sales: 'sales',
-    Other: 'other',
-} as const
-
-export type BlankEnumApi = (typeof BlankEnumApi)[keyof typeof BlankEnumApi]
-
-export const BlankEnumApi = {
-    '': '',
-} as const
-
-/**
- * @nullable
- */
-export type UserBasicApiHedgehogConfig = { [key: string]: unknown } | null
-
-export interface UserBasicApi {
-    readonly id: number
-    readonly uuid: string
-    /**
-     * @maxLength 200
-     * @nullable
-     */
-    distinct_id?: string | null
-    /** @maxLength 150 */
-    first_name?: string
-    /** @maxLength 150 */
-    last_name?: string
-    /** @maxLength 254 */
-    email: string
-    /** @nullable */
-    is_email_verified?: boolean | null
-    /** @nullable */
-    readonly hedgehog_config: UserBasicApiHedgehogConfig
-    role_at_organization?: RoleAtOrganizationEnumApi | BlankEnumApi | null
-}
-
-export interface CustomToolTemplateSummaryApi {
-    readonly id: string
-    readonly name: string
-    readonly description: string
-    readonly version: number
-    readonly is_latest: boolean
-    readonly requires_secrets: readonly string[]
-    /** Number of frozen agent revisions pinning this template (any version). */
-    readonly usage_count: number
-    /** Publisher. Null for canonical PostHog-owned templates. */
-    readonly created_by: UserBasicApi
-    readonly updated_at: string
-}
-
-export interface CustomToolTemplateCreateApi {
-    /**
-     * Slug-shaped name unique per team.
-     * @maxLength 128
-     */
-    name: string
-    /**
-     * One-line description.
-     * @maxLength 4096
-     */
-    description?: string
-    /** TypeScript source. */
-    source?: string
-    /** Bundler output. The publisher (UI or MCP) computes this client-side. */
-    compiled_js?: string
-    /** TypeBox / JSON Schema for tool args. */
-    args_schema?: unknown
-    /** Optional TypeBox / JSON Schema for the return value. */
-    returns_schema?: unknown
-    /** Names of secrets the tool reads via `ctx.secret(...)`. */
-    requires_secrets?: string[]
-}
-
-export interface CustomToolTemplateDetailApi {
-    readonly id: string
-    readonly name: string
-    readonly description: string
-    readonly version: number
-    readonly is_latest: boolean
-    readonly requires_secrets: readonly string[]
-    /** Number of frozen agent revisions pinning this template (any version). */
-    readonly usage_count: number
-    /** Publisher. Null for canonical PostHog-owned templates. */
-    readonly created_by: UserBasicApi
-    readonly updated_at: string
-    /** TypeScript source the bundler compiles to `compiled_js`. */
-    source: string
-    /** Last bundle output. Copied into `bundle/tools/<alias>/compiled.js` at freeze. */
-    compiled_js: string
-    /** TypeBox / JSON Schema for tool args. */
-    args_schema: unknown
-    /** Optional TypeBox / JSON Schema for the return value (informational). */
-    returns_schema?: unknown
-}
-
-export interface CustomToolTemplateDuplicateApi {
-    /**
-     * Slug for the duplicate.
-     * @maxLength 128
-     */
-    name: string
-    /**
-     * Description for the new template.
-     * @maxLength 4096
-     */
-    description?: string
-}
-
-/**
- * Structured edit applied to source.
- */
-export interface CustomToolTemplateEditApi {
-    /** Text to locate (must match exactly once). */
-    old: string
-    /** Replacement text. */
-    new: string
-}
-
-export interface CustomToolTemplatePublishApi {
-    /**
-     * Overrides the prior description. Omit to keep the prior value.
-     * @maxLength 4096
-     */
-    description?: string
-    /** Full new TypeScript source. Mutually exclusive with `edits`. */
-    source?: string
-    /** Structured edits against the current source. */
-    edits?: CustomToolTemplateEditApi[]
-    /** Updated bundle output. Required when `source` or `edits` are supplied. */
-    compiled_js?: string
-    /** Overrides args_schema. Omit to keep prior value. */
-    args_schema?: unknown
-    /** Overrides returns_schema. Omit to keep prior value. */
-    returns_schema?: unknown
-    /** Overrides requires_secrets. Omit to keep prior value. */
-    requires_secrets?: string[]
-}
-
-export interface CustomToolTemplateUsageApi {
-    /** Slug of the agent whose revision pins this tool. */
-    agent_slug: string
-    /** Display name of the agent. */
-    agent_name: string
-    /** Frozen revision id. */
-    revision_id: string
-    /** First 8 chars of the revision id, for display. */
-    revision_short_id: string
-    /** Tool version pinned at freeze. */
-    pinned_version: number
-}
-
-/**
- * Read shape used by `…/versions/` on both template families.
- */
-export interface TemplateVersionEntryApi {
-    /** Version number. */
-    version: number
-    /** True for the current row in this version's name lineage. */
-    is_latest: boolean
-    /** Publisher. Null for canonical. */
-    created_by: UserBasicApi | null
-    /** When this version was published. */
-    updated_at: string
+    /** Approval-gated tool requests across the team currently awaiting a decision. 0 on the per-application aggregate (which doesn't roll up approvals). */
+    pendingApprovalsCount: number
 }
 
 /**
@@ -1414,212 +1426,6 @@ export interface AgentNativeToolEntryApi {
 
 export interface AgentNativeToolsListResponseApi {
     tools: AgentNativeToolEntryApi[]
-}
-
-/**
- * List shape — no body / file contents (keeps the index page fast).
- */
-export interface SkillTemplateSummaryApi {
-    readonly id: string
-    readonly name: string
-    readonly description: string
-    readonly version: number
-    readonly is_latest: boolean
-    /** Number of companion files attached to the current version. */
-    readonly file_count: number
-    /** Number of frozen agent revisions pinning this template (any version). */
-    readonly usage_count: number
-    /** Agent Skills `license` frontmatter — license name or a reference to a bundled license file. Blank if unset. */
-    license: string
-    /** Agent Skills `compatibility` frontmatter — environment requirements (intended product, packages, network). Blank if unset. */
-    compatibility: string
-    readonly metadata: unknown
-    readonly allowed_tools: unknown
-    /** Publisher. Null for canonical PostHog-owned templates. */
-    readonly created_by: UserBasicApi
-    readonly updated_at: string
-}
-
-export interface SkillTemplateFileApi {
-    readonly id: string
-    /**
-     * Relative path inside the skill folder; may include subfolders (e.g. `references/api.md`, `scripts/run.py`, `assets/x/y.json`). Becomes `bundle/skills/<alias>/<path>` at freeze. No `..` traversal or absolute paths.
-     * @maxLength 512
-     */
-    path: string
-    /** File body. Plain text or markdown — companion files are not interpreted by the runner. */
-    content: string
-    /**
-     * MIME type hint. Read-only at runtime; aids the registry UI's file viewer.
-     * @maxLength 128
-     */
-    content_type?: string
-}
-
-/**
- * Initial-create payload — produces v1.
- */
-export interface SkillTemplateCreateApi {
-    /**
-     * Slug-shaped name unique per team (max 64 chars, per the Agent Skills spec). `@posthog/<slug>` is reserved for canonical templates.
-     * @maxLength 64
-     */
-    name: string
-    /**
-     * Required description (1–1024 chars, per the Agent Skills spec) — what the skill does and when to use it. Shown in the list view + system-prompt skill index.
-     * @maxLength 1024
-     */
-    description: string
-    /** Initial SKILL.md markdown body. Any leading YAML frontmatter is stripped at freeze — frontmatter is assembled from the structured fields. */
-    body?: string
-    /**
-     * Agent Skills `license` frontmatter — license name or a reference to a bundled license file.
-     * @maxLength 256
-     */
-    license?: string
-    /**
-     * Agent Skills `compatibility` frontmatter — environment requirements (intended product, packages, network access). Max 500 chars.
-     * @maxLength 500
-     */
-    compatibility?: string
-    /** Optional companion files (scripts/, references/, assets/ — arbitrarily nested) at creation time. */
-    files?: SkillTemplateFileApi[]
-    /** Agent Skills `metadata` map (string → string) for non-promoted keys like author or version. */
-    metadata?: unknown
-    /** Optional list of tool ids the skill expects to reach for. Emitted as the spec's space-separated `allowed-tools` frontmatter at freeze. */
-    allowed_tools?: unknown
-}
-
-/**
- * Detail shape: adds body + files. Used by the registry detail page.
- */
-export interface SkillTemplateDetailApi {
-    readonly id: string
-    readonly name: string
-    readonly description: string
-    readonly version: number
-    readonly is_latest: boolean
-    /** Number of companion files attached to the current version. */
-    readonly file_count: number
-    /** Number of frozen agent revisions pinning this template (any version). */
-    readonly usage_count: number
-    /** Agent Skills `license` frontmatter — license name or a reference to a bundled license file. Blank if unset. */
-    license: string
-    /** Agent Skills `compatibility` frontmatter — environment requirements (intended product, packages, network). Blank if unset. */
-    compatibility: string
-    readonly metadata: unknown
-    readonly allowed_tools: unknown
-    /** Publisher. Null for canonical PostHog-owned templates. */
-    readonly created_by: UserBasicApi
-    readonly updated_at: string
-    /** Markdown body. The `SKILL.md` equivalent. */
-    body: string
-    /** Companion files attached to this version. */
-    readonly files: readonly SkillTemplateFileApi[]
-}
-
-export interface SkillTemplateDuplicateApi {
-    /**
-     * Slug for the new duplicate (max 64 chars). Must not collide with an existing template.
-     * @maxLength 64
-     */
-    name: string
-    /**
-     * Description for the new template (1–1024 chars, non-empty). Omit to keep the source's description.
-     * @maxLength 1024
-     */
-    description?: string
-}
-
-export interface SkillTemplateFileWriteApi {
-    /**
-     * Relative path inside the skill folder; may include subfolders (e.g. `references/api.md`, `scripts/run.py`). No `..` traversal or absolute paths.
-     * @maxLength 512
-     */
-    path: string
-    /** File body. */
-    content: string
-    /**
-     * MIME type hint.
-     * @maxLength 128
-     */
-    content_type?: string
-}
-
-export interface SkillTemplateFileRenameApi {
-    /**
-     * Existing file path inside the skill folder (subfolders allowed).
-     * @maxLength 512
-     */
-    from_path: string
-    /**
-     * New path (subfolders allowed); may move the file between subfolders. Must not collide with another file.
-     * @maxLength 512
-     */
-    to_path: string
-}
-
-/**
- * A single find/replace edit applied to body or a file's content.
- */
-export interface SkillTemplateEditApi {
-    /** Text to locate (must match exactly once). */
-    old: string
-    /** Replacement text. */
-    new: string
-    /**
-     * Apply this edit to a companion file instead of the body. Null/omitted = body edit.
-     * @nullable
-     */
-    file_path?: string | null
-}
-
-/**
- * Publish a new version.
-
-Supply EITHER `body` (full overwrite) OR `edits` (structured
-find/replace). The viewset rejects requests carrying both.
- */
-export interface SkillTemplatePublishApi {
-    /**
-     * Overrides the prior description (1–1024 chars, non-empty). Omit to keep the prior value.
-     * @maxLength 1024
-     */
-    description?: string
-    /** Full new body. Mutually exclusive with `edits`. */
-    body?: string
-    /** Structured edits. Each `old` must match exactly once in the current body / file. */
-    edits?: SkillTemplateEditApi[]
-    /**
-     * Overrides the `license` frontmatter. Omit to keep the prior value.
-     * @maxLength 256
-     */
-    license?: string
-    /**
-     * Overrides the `compatibility` frontmatter (max 500 chars). Omit to keep the prior value.
-     * @maxLength 500
-     */
-    compatibility?: string
-    /** Overrides the metadata map. Omit to keep the prior value. */
-    metadata?: unknown
-    /** Overrides allowed_tools. Omit to keep the prior value. */
-    allowed_tools?: unknown
-}
-
-/**
- * Read shape returned by `…/usages/`. Sourced from the join table.
- */
-export interface SkillTemplateUsageApi {
-    /** Slug of the agent whose revision pins this template. */
-    agent_slug: string
-    /** Display name of the agent. */
-    agent_name: string
-    /** Frozen revision id. */
-    revision_id: string
-    /** First 8 chars of the revision id, for display. */
-    revision_short_id: string
-    /** Template version pinned at freeze. */
-    pinned_version: number
 }
 
 /**
@@ -1722,27 +1528,6 @@ export type AgentApplicationsRevisionsListParams = {
      * The initial index from which to return the results.
      */
     offset?: number
-}
-
-export type AgentApplicationsRevisionsFileRetrieveParams = {
-    /**
-     * Bundle-relative file path, e.g. `agent.md` or `skills/research.md`.
-     */
-    path: string
-}
-
-export type AgentApplicationsRevisionsFileUpdateParams = {
-    /**
-     * Bundle-relative file path, e.g. `agent.md` or `skills/research.md`.
-     */
-    path: string
-}
-
-export type AgentApplicationsRevisionsFileDestroyParams = {
-    /**
-     * Bundle-relative file path, e.g. `agent.md` or `skills/research.md`.
-     */
-    path: string
 }
 
 export type AgentApplicationsApprovalsListParams = {
@@ -1860,25 +1645,17 @@ export type AgentApplicationsStatsParams = {
     since?: string
 }
 
-export type AgentCustomToolTemplatesListParams = {
+export type AgentFleetApprovalsListParams = {
     /**
-     * Optional substring filter against name + description.
+     * Optional agent UUID — narrows the listing to one application.
      */
-    search?: string
-}
-
-export type AgentCustomToolTemplatesNameRetrieveParams = {
+    agent_id?: string
+    limit?: number
+    offset?: number
     /**
-     * Fetch a specific version.
+     * Filter by approval state. Comma-separated list accepted. Valid values: queued, approving, dispatched, dispatched_failed, rejected, expired. Defaults to all states.
      */
-    version?: number
-}
-
-export type AgentCustomToolTemplatesNameUsagesListParams = {
-    /**
-     * Filter to a specific pinned version.
-     */
-    pinned_version?: number
+    state?: string
 }
 
 export type AgentFleetLiveSessionsParams = {
@@ -1893,25 +1670,4 @@ export type AgentFleetStatsParams = {
      * ISO datetime — counts spend + session totals from this point forward. Defaults to 24h ago.
      */
     since?: string
-}
-
-export type AgentSkillTemplatesListParams = {
-    /**
-     * Optional substring filter against name + description.
-     */
-    search?: string
-}
-
-export type AgentSkillTemplatesNameRetrieveParams = {
-    /**
-     * Fetch a specific version. Omit for the current `is_latest=true` row.
-     */
-    version?: number
-}
-
-export type AgentSkillTemplatesNameUsagesListParams = {
-    /**
-     * Filter to revisions stuck on a specific version (`/?pinned_version=3`).
-     */
-    pinned_version?: number
 }

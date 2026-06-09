@@ -10,12 +10,44 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.conf import settings
+
 import jsonschema
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from posthog.models import User
+
 from .models import AgentApplication, AgentRevision
 from .spec_schema import AGENT_SPEC_JSON_SCHEMA, AGENT_SPEC_JSON_SCHEMA_FOR_WRITE
+
+# Shape of the resolved `created_by` object — exactly the fields the agent
+# console renders. Nullable: `created_by_id` may be unset (system rows) or
+# point at a since-deleted user.
+_CREATED_BY_SCHEMA = {
+    "type": "object",
+    "nullable": True,
+    "properties": {
+        "id": {"type": "integer"},
+        "first_name": {"type": "string"},
+        "email": {"type": "string", "format": "email"},
+    },
+}
+
+
+def _resolve_created_by(context: dict[str, Any], user_id: int | None) -> dict[str, Any] | None:
+    """Resolve a `created_by_id` (plain int — these are product-DB models with
+    no cross-DB FK to User) into a minimal user object. Cached per serializer
+    context so a list endpoint resolves each distinct user once."""
+    if not user_id:
+        return None
+    cache: dict[int, dict[str, Any] | None] = context.setdefault("_created_by_cache", {})
+    if user_id not in cache:
+        user = User.objects.filter(pk=user_id).only("id", "first_name", "email").first()
+        cache[user_id] = (
+            {"id": user.id, "first_name": user.first_name, "email": user.email} if user is not None else None
+        )
+    return cache[user_id]
 
 
 def _validate_mcp_tool_names_unique(spec: Any) -> None:
@@ -46,24 +78,73 @@ def _validate_mcp_tool_names_unique(spec: Any) -> None:
 
 
 class AgentApplicationSerializer(serializers.ModelSerializer):
+    slack_events_url = serializers.SerializerMethodField(
+        help_text=(
+            "Public URL to paste into the Slack app dashboard under Event Subscriptions → Request URL. "
+            "Computed from `AGENT_INGRESS_PUBLIC_URL` + the agent slug. Null when the deployment has no "
+            "public agent-ingress URL configured (e.g. local dev without a tunnel)."
+        ),
+    )
+    slack_interactivity_url = serializers.SerializerMethodField(
+        help_text=(
+            "Public URL to paste into the Slack app dashboard under Interactivity & Shortcuts → Request URL. "
+            "Same source + null behaviour as `slack_events_url`."
+        ),
+    )
+    created_by = serializers.SerializerMethodField(
+        help_text="Resolved creator (id, first_name, email) from `created_by_id`, or null if unset or the user was deleted.",
+    )
+
     class Meta:
         model = AgentApplication
         fields = [
             "id",
-            "team",
+            "team_id",
             "name",
             "slug",
             "description",
             "live_revision",
             "archived",
             "archived_at",
+            "created_by_id",
             "created_by",
             "created_at",
             "updated_at",
+            "slack_events_url",
+            "slack_interactivity_url",
         ]
         # encrypted_env is set/cleared via the dedicated `set_env` action;
         # never round-tripped through the standard CRUD payload.
-        read_only_fields = ["id", "team", "live_revision", "archived_at", "created_by", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "team_id",
+            "live_revision",
+            "archived_at",
+            "created_by_id",
+            "created_at",
+            "updated_at",
+            "slack_events_url",
+            "slack_interactivity_url",
+        ]
+
+    @extend_schema_field(_CREATED_BY_SCHEMA)
+    def get_created_by(self, obj: AgentApplication) -> dict[str, Any] | None:
+        return _resolve_created_by(self.context, obj.created_by_id)
+
+    @extend_schema_field({"type": "string", "format": "uri", "nullable": True})
+    def get_slack_events_url(self, obj: AgentApplication) -> str | None:
+        return _slack_path_url(obj.slug, "events")
+
+    @extend_schema_field({"type": "string", "format": "uri", "nullable": True})
+    def get_slack_interactivity_url(self, obj: AgentApplication) -> str | None:
+        return _slack_path_url(obj.slug, "interactivity")
+
+
+def _slack_path_url(slug: str, suffix: str) -> str | None:
+    base = (settings.AGENT_INGRESS_PUBLIC_URL or "").rstrip("/")
+    if not base or not slug:
+        return None
+    return f"{base}/agents/{slug}/slack/{suffix}"
 
 
 @extend_schema_field(AGENT_SPEC_JSON_SCHEMA)
@@ -76,6 +157,13 @@ class AgentSpecField(serializers.JSONField):
 
 class AgentRevisionSerializer(serializers.ModelSerializer):
     spec = AgentSpecField(required=False, default=dict)
+    created_by = serializers.SerializerMethodField(
+        help_text="Resolved creator (id, first_name, email) from `created_by_id`, or null if unset or the user was deleted.",
+    )
+
+    @extend_schema_field(_CREATED_BY_SCHEMA)
+    def get_created_by(self, obj: AgentRevision) -> dict[str, Any] | None:
+        return _resolve_created_by(self.context, obj.created_by_id)
 
     def validate_spec(self, value: Any) -> Any:
         # Same shape the janitor's `AgentSpecSchema.parse` will reject on
@@ -99,6 +187,7 @@ class AgentRevisionSerializer(serializers.ModelSerializer):
             "bundle_uri",
             "bundle_sha256",
             "spec",
+            "created_by_id",
             "created_by",
             "created_at",
             "updated_at",
@@ -110,7 +199,7 @@ class AgentRevisionSerializer(serializers.ModelSerializer):
             "application",
             "state",
             "bundle_sha256",
-            "created_by",
+            "created_by_id",
             "created_at",
             "updated_at",
         ]
@@ -165,21 +254,68 @@ class PromoteRevisionRequestSerializer(serializers.Serializer):
     """
 
 
-class WriteFileRequestSerializer(serializers.Serializer):
-    """Body shape for PUT /revisions/<id>/file/. `path` lives in the query
-    string (matches the janitor wire format); `content` is the new file body."""
+class WriteAgentMdRequestSerializer(serializers.Serializer):
+    """Body shape for PUT /revisions/<id>/agent_md/."""
 
     content = serializers.CharField(allow_blank=True, trim_whitespace=False)
 
 
-class WriteBundleRequestSerializer(serializers.Serializer):
-    """Body shape for PUT /revisions/<id>/bundle/ — the bulk upload.
+class WriteSpecRequestSerializer(serializers.Serializer):
+    """Body shape for PUT /revisions/<id>/spec/. The body's `spec` object
+    is the author-facing slice (skills/tools are server-derived at freeze)."""
 
-    `files` is a `{path: utf-8 content}` map. `mode='replace'` wipes the
-    existing bundle before writing the new set; `'merge'` upserts."""
+    spec = serializers.DictField(child=serializers.JSONField())
 
-    files = serializers.DictField(child=serializers.CharField(allow_blank=True, trim_whitespace=False))
-    mode = serializers.ChoiceField(choices=["replace", "merge"], default="replace")
+
+class _SkillFileSerializer(serializers.Serializer):
+    path = serializers.CharField(allow_blank=False, trim_whitespace=False)
+    content = serializers.CharField(allow_blank=True, trim_whitespace=False)
+
+
+class WriteSkillRequestSerializer(serializers.Serializer):
+    """Body shape for PUT /revisions/<id>/skills/<skill_id>/."""
+
+    description = serializers.CharField(allow_blank=False, trim_whitespace=False)
+    body = serializers.CharField(allow_blank=True, trim_whitespace=False)
+    files = serializers.ListField(child=_SkillFileSerializer(), required=False, default=list)
+
+
+class WriteToolRequestSerializer(serializers.Serializer):
+    """Body shape for PUT /revisions/<id>/tools/<tool_id>/."""
+
+    description = serializers.CharField(allow_blank=False, trim_whitespace=False)
+    args_schema = serializers.DictField(child=serializers.JSONField())
+    source = serializers.CharField(allow_blank=False, trim_whitespace=False)
+
+
+class WriteTypedBundleRequestSerializer(serializers.Serializer):
+    """Body shape for PUT /revisions/<id>/bundle/ — the full-replace typed
+    payload. See docs/agent-platform/plans/typed-bundle-authoring-api.md §3."""
+
+    agent_md = serializers.CharField(allow_blank=True, trim_whitespace=False)
+    skills = serializers.ListField(child=WriteSkillRequestSerializer(), required=False, default=list)
+    tools = serializers.ListField(child=WriteToolRequestSerializer(), required=False, default=list)
+    spec = serializers.DictField(child=serializers.JSONField())
+
+    def to_internal_value(self, data: dict) -> dict:
+        """Skill / tool items carry an `id` field that the nested serializer
+        doesn't declare (it lives in the URL for the single-resource PUTs).
+        Stash + restore so the per-item validation still passes."""
+        skills = data.get("skills", [])
+        tools = data.get("tools", [])
+        skill_ids = [s.get("id") for s in skills]
+        tool_ids = [t.get("id") for t in tools]
+        # Strip ids so the inner serializers don't complain about unknowns.
+        stripped = {
+            **data,
+            "skills": [{k: v for k, v in s.items() if k != "id"} for s in skills],
+            "tools": [{k: v for k, v in t.items() if k != "id"} for t in tools],
+        }
+        out = super().to_internal_value(stripped)
+        # Reattach ids — janitor wants them.
+        out["skills"] = [{**s, "id": skill_ids[i]} for i, s in enumerate(out.get("skills", []))]
+        out["tools"] = [{**t, "id": tool_ids[i]} for i, t in enumerate(out.get("tools", []))]
+        return out
 
 
 class CloneFromRequestSerializer(serializers.Serializer):

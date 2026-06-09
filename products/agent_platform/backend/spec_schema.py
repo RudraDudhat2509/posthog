@@ -36,6 +36,30 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+# Shared `approval_policy` block — referenced from every tool variant that
+# can be approval-gated (native + custom + MCP entries). Mirror
+# `ApprovalPolicySchema` in services/agent-shared/src/spec/spec.ts.
+_APPROVAL_POLICY_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "approvers": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "enum": ["team_admins", "session_principal"]},
+            "default": ["team_admins"],
+        },
+        "allow_edit": {"type": "boolean", "default": False},
+        "ttl_ms": {
+            "type": "integer",
+            "minimum": 60000,
+            "maximum": 7 * 24 * 60 * 60 * 1000,
+            "default": 24 * 60 * 60 * 1000,
+        },
+        "allow_agent_approver": {"type": "boolean", "default": False},
+    },
+    "additionalProperties": False,
+}
+
 _AGENT_SPEC_JSON_SCHEMA_RAW: dict[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -55,6 +79,9 @@ _AGENT_SPEC_JSON_SCHEMA_RAW: dict[str, Any] = {
                                 "properties": {
                                     "channel_id": {"type": "string"},
                                     "mention_only": {"default": False, "type": "boolean"},
+                                    "auto_resume_threads": {"default": False, "type": "boolean"},
+                                    "allow_workspace_participants": {"default": False, "type": "boolean"},
+                                    "ack_reaction": {"type": "string"},
                                     "trusted_workspaces": {
                                         "anyOf": [
                                             {"minItems": 1, "type": "array", "items": {"type": "string"}},
@@ -62,7 +89,12 @@ _AGENT_SPEC_JSON_SCHEMA_RAW: dict[str, Any] = {
                                         ]
                                     },
                                 },
-                                "required": ["mention_only", "trusted_workspaces"],
+                                "required": [
+                                    "mention_only",
+                                    "auto_resume_threads",
+                                    "allow_workspace_participants",
+                                    "trusted_workspaces",
+                                ],
                                 "additionalProperties": False,
                             },
                         },
@@ -157,10 +189,17 @@ _AGENT_SPEC_JSON_SCHEMA_RAW: dict[str, Any] = {
             "items": {
                 "oneOf": [
                     {
+                        # Native + custom tool variants accept the same
+                        # inline approval-gating fields as MCP tool
+                        # entries (below) — see `ToolRefSchema` in
+                        # services/agent-shared/src/spec/spec.ts. Mirror
+                        # any changes there.
                         "type": "object",
                         "properties": {
                             "kind": {"type": "string", "const": "native"},
                             "id": {"type": "string"},
+                            "requires_approval": {"type": "boolean", "default": False},
+                            "approval_policy": _APPROVAL_POLICY_JSON_SCHEMA,
                         },
                         "required": ["kind", "id"],
                         "additionalProperties": False,
@@ -171,6 +210,8 @@ _AGENT_SPEC_JSON_SCHEMA_RAW: dict[str, Any] = {
                             "kind": {"type": "string", "const": "custom"},
                             "id": {"type": "string"},
                             "path": {"type": "string"},
+                            "requires_approval": {"type": "boolean", "default": False},
+                            "approval_policy": _APPROVAL_POLICY_JSON_SCHEMA,
                         },
                         "required": ["kind", "id", "path"],
                         "additionalProperties": False,
@@ -206,9 +247,10 @@ _AGENT_SPEC_JSON_SCHEMA_RAW: dict[str, Any] = {
                             "timeout_ms": {
                                 "type": "integer",
                                 "minimum": 1,
-                                "maximum": 60000,
+                                "maximum": 600000,
                                 "default": 5000,
                             },
+                            "interactive": {"type": "boolean", "default": False},
                         },
                         "required": ["kind", "id", "description"],
                         "additionalProperties": False,
@@ -341,6 +383,11 @@ _AGENT_SPEC_JSON_SCHEMA_RAW: dict[str, Any] = {
                     "exclusiveMinimum": 0,
                     "maximum": 9007199254740991,
                 },
+                "max_output_tokens": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 200000,
+                },
             },
             "required": ["max_turns", "max_tool_calls", "max_wall_seconds"],
             "additionalProperties": False,
@@ -352,8 +399,9 @@ _AGENT_SPEC_JSON_SCHEMA_RAW: dict[str, Any] = {
             # `{type: 'public'}` to `{type: string}`, which then fails to
             # satisfy the generated discriminated-union zod schema. The
             # runtime default still applies via the node-side
-            # `AuthConfigSchema.default({ modes: [{ type: 'public' }] })`
-            # in services/agent-shared/src/spec/spec.ts.
+            # `AuthConfigSchema.default({ modes: [{ type: 'posthog_internal' }] })`
+            # in services/agent-shared/src/spec/spec.ts — closed by default.
+            # Public is opt-in and requires `acknowledge_public_exposure: true`.
             "type": "object",
             "properties": {
                 "modes": {
@@ -365,9 +413,18 @@ _AGENT_SPEC_JSON_SCHEMA_RAW: dict[str, Any] = {
                     "items": {
                         "oneOf": [
                             {
+                                # Public exposure is intentionally opt-in and noisy.
+                                # `acknowledge_public_exposure: true` is required to
+                                # surface the choice in UIs and to gate AI-authored
+                                # specs against accidentally opening agents to the
+                                # internet. Mirrors `AuthModeSchema` in
+                                # services/agent-shared/src/spec/spec.ts.
                                 "type": "object",
-                                "properties": {"type": {"type": "string", "const": "public"}},
-                                "required": ["type"],
+                                "properties": {
+                                    "type": {"type": "string", "const": "public"},
+                                    "acknowledge_public_exposure": {"type": "boolean", "const": True},
+                                },
+                                "required": ["type", "acknowledge_public_exposure"],
                                 "additionalProperties": False,
                             },
                             {
@@ -500,6 +557,7 @@ AGENT_SPEC_JSON_SCHEMA_FOR_WRITE: dict[str, Any] = _relax_required_for_defaults(
 # the same key.
 
 SLACK_SIGNING_SECRET_KEY = "SLACK_SIGNING_SECRET"
+SLACK_BOT_TOKEN_KEY = "SLACK_BOT_TOKEN"
 
 TRIGGER_REQUIRED_SECRETS: dict[str, list[dict[str, Any]]] = {
     "chat": [],
@@ -513,6 +571,16 @@ TRIGGER_REQUIRED_SECRETS: dict[str, list[dict[str, Any]]] = {
             "description": (
                 "Your Slack app's signing secret. Find it under Settings → Basic Information → "
                 "Signing Secret. Required to verify inbound Slack event signatures."
+            ),
+            "required": True,
+        },
+        {
+            "key": SLACK_BOT_TOKEN_KEY,
+            "label": "Slack bot user OAuth token",
+            "description": (
+                "Your Slack app's bot token (starts with `xoxb-`). Find it under Settings → "
+                "Install App → Bot User OAuth Token after installing the app to your workspace. "
+                "Used by native slack tools to call the Slack API."
             ),
             "required": True,
         },

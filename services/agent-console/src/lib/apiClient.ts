@@ -33,6 +33,8 @@ import type {
     AgentApplicationSessionLogsResponseApi,
     AgentApplicationSessionsListResponseApi,
     AgentApplicationSessionsRetrieveResponseApi,
+    AgentApprovalRequestApi,
+    AgentApprovalRequestStateEnumApi,
     AgentConversationMessageApi,
     AgentFleetLiveSessionsResponseApi,
     AgentFleetLiveSessionSummaryApi,
@@ -176,29 +178,82 @@ export async function listRevisions(teamId: number, slug: string): Promise<Agent
 }
 
 /**
- * Bulk-pull a revision's bundle. Django shape: `{ files: { path:
- * content }, ... }`. Transformed here so consumers get the typed
- * `BundleFile[]` array.
+ * Bulk-pull a revision's typed bundle. Django returns the typed shape
+ * `{ bundle: { agent_md, skills, tools, spec }, ... }`. We flatten it
+ * back to a `BundleFile[]` keyed by canonical S3 path so the existing
+ * file-tree UI works unchanged.
  */
+interface TypedBundleResponse {
+    bundle: {
+        agent_md: string
+        skills: { id: string; description: string; body: string; files?: { path: string; content: string }[] }[]
+        tools: { id: string; description: string; args_schema: Record<string, unknown>; source: string }[]
+    }
+}
+
 export async function getBundle(teamId: number, slug: string, revisionId: string): Promise<BundleFile[]> {
-    const raw = await getJson<{ files: Record<string, string> }>(
+    const raw = await getJson<TypedBundleResponse>(
         posthogUrl(
             teamId,
             `/agent_applications/${encodeURIComponent(slug)}/revisions/${encodeURIComponent(revisionId)}/bundle/`
         )
     )
-    return Object.entries(raw.files).map(([path, content]) => ({
-        path,
-        content,
-        language: languageForPath(path),
-    }))
+    const bundle = raw.bundle ?? { agent_md: '', skills: [], tools: [] }
+    const out: BundleFile[] = []
+    if (bundle.agent_md !== undefined) {
+        out.push({ path: 'agent.md', content: bundle.agent_md, language: languageForPath('agent.md') })
+    }
+    for (const skill of bundle.skills ?? []) {
+        out.push({
+            path: `skills/${skill.id}.md`,
+            content: skill.body,
+            language: 'markdown',
+        })
+        for (const f of skill.files ?? []) {
+            const p = `skills/${skill.id}/files/${f.path}`
+            out.push({ path: p, content: f.content, language: languageForPath(p) })
+        }
+    }
+    for (const tool of bundle.tools ?? []) {
+        const sourcePath = `tools/${tool.id}/source.ts`
+        out.push({ path: sourcePath, content: tool.source, language: 'typescript' })
+        const schemaPath = `tools/${tool.id}/schema.json`
+        const schemaText = JSON.stringify({ description: tool.description, args_schema: tool.args_schema }, null, 2)
+        out.push({ path: schemaPath, content: schemaText, language: 'json' })
+    }
+    out.sort((a, b) => a.path.localeCompare(b.path))
+    return out
+}
+
+export interface SlackManifestResponse {
+    revision_id: string
+    /** Slack app manifest (opaque JSON) to paste into the "create from manifest" flow. */
+    manifest: Record<string, unknown>
+    notes: string[]
+    events_url: string | null
+    interactivity_url: string | null
+}
+
+export async function getSlackManifest(
+    teamId: number,
+    slug: string,
+    revisionId: string
+): Promise<SlackManifestResponse> {
+    return getJson<SlackManifestResponse>(
+        posthogUrl(
+            teamId,
+            `/agent_applications/${encodeURIComponent(slug)}/revisions/${encodeURIComponent(revisionId)}/slack_manifest/`
+        )
+    )
 }
 
 function languageForPath(path: string): BundleFileLanguage {
     if (path.endsWith('.md') || path.endsWith('.mdx')) {
         return 'markdown'
     }
-    if (path.endsWith('.ts') || path.endsWith('.tsx')) {
+    // TS/JS share the same highlighter — compiled.js lives next to source.ts
+    // in tool bundles, and authors should be able to read both.
+    if (path.endsWith('.ts') || path.endsWith('.tsx') || path.endsWith('.js') || path.endsWith('.jsx')) {
         return 'typescript'
     }
     if (path.endsWith('.json')) {
@@ -219,15 +274,30 @@ function languageForPath(path: string): BundleFileLanguage {
  * drift signal we want — fix the mapper rather than casting through it.
  */
 
+export interface ListSessionsResult {
+    sessions: ChatSession[]
+    /** Total matching sessions on the server, before pagination. */
+    count: number
+}
+
 export async function listSessionsForAgent(
     teamId: number,
     slug: string,
-    agent: { id: string; name: string; slug: string }
-): Promise<ChatSession[]> {
-    const { results } = await getJson<AgentApplicationSessionsListResponseApi>(
-        posthogUrl(teamId, `/agent_applications/${encodeURIComponent(slug)}/sessions/`)
+    agent: { id: string; name: string; slug: string },
+    params: { limit?: number; offset?: number } = {}
+): Promise<ListSessionsResult> {
+    const qsParams = new URLSearchParams()
+    if (params.limit !== undefined) {
+        qsParams.set('limit', String(params.limit))
+    }
+    if (params.offset !== undefined) {
+        qsParams.set('offset', String(params.offset))
+    }
+    const qs = qsParams.toString()
+    const { results, count } = await getJson<AgentApplicationSessionsListResponseApi>(
+        posthogUrl(teamId, `/agent_applications/${encodeURIComponent(slug)}/sessions/${qs ? `?${qs}` : ''}`)
     )
-    return results.map((s) => summaryToChatSession(s, agent))
+    return { sessions: results.map((s) => summaryToChatSession(s, agent)), count }
 }
 
 function summaryToChatSession(
@@ -417,7 +487,21 @@ function conversationToTurns(messages: AgentConversationMessageApi[], sessionId:
         const iso = new Date(m.timestamp).toISOString()
         const id = `${sessionId}:${i}`
         if (m.role === 'user') {
-            turns.push({ kind: 'user', id, timestamp: iso, text: userMessageText(m.content) })
+            const text = userMessageText(m.content)
+            // Interactive client-tool wake messages get rerouted onto the
+            // matching tool_call's result instead of rendering as a bubble.
+            const wake = parseClientToolWake(text)
+            if (wake) {
+                const target = toolCallIndex.get(wake.call_id)
+                if (target) {
+                    target.fulfillment = 'client'
+                    target.result = wake.ok
+                        ? { ok: true, body: wake.result ?? null }
+                        : { ok: false, error: wake.error || 'client_tool_failed' }
+                    continue
+                }
+            }
+            turns.push({ kind: 'user', id, timestamp: iso, text })
             continue
         }
         if (m.role === 'assistant') {
@@ -485,7 +569,53 @@ function attachToolResult(
         return
     }
     const text = Array.isArray(m.content) ? m.content.map((p) => (isTextPart(p) ? p.text : '')).join('') : ''
+    // Interactive client tools persist a synthetic queued envelope. Mark
+    // the call as client-fulfilled so the inline form remounts on reload,
+    // and leave `result` unset until the wake message lands.
+    if (!m.isError && isInteractiveQueuedEnvelopeText(text)) {
+        target.fulfillment = 'client'
+        return
+    }
     target.result = m.isError ? { ok: false, error: text || 'tool error' } : { ok: true, body: text }
+}
+
+function isInteractiveQueuedEnvelopeText(text: string): boolean {
+    if (!text || text.length > 2000) {
+        return false
+    }
+    try {
+        const parsed = JSON.parse(text) as Record<string, unknown>
+        return parsed.queued === true && parsed.interactive === true && typeof parsed.call_id === 'string'
+    } catch {
+        return false
+    }
+}
+
+interface ClientToolWake {
+    call_id: string
+    ok: boolean
+    result?: unknown
+    error?: string
+}
+
+function parseClientToolWake(text: string): ClientToolWake | null {
+    if (!text || text.length > 100_000) {
+        return null
+    }
+    try {
+        const parsed = JSON.parse(text) as Record<string, unknown>
+        if (typeof parsed.call_id !== 'string' || typeof parsed.ok !== 'boolean') {
+            return null
+        }
+        return {
+            call_id: parsed.call_id,
+            ok: parsed.ok,
+            result: parsed.result,
+            error: typeof parsed.error === 'string' ? parsed.error : undefined,
+        }
+    } catch {
+        return null
+    }
 }
 
 /* ── Narrowing helpers for `unknown`-typed wire content ───────────── */
@@ -691,6 +821,7 @@ interface AggregateStatsWire {
     spendInWindowUsd: number
     lastActivityAt: string | null
     failedInWindowCount: number
+    pendingApprovalsCount: number
 }
 
 export async function getAgentStats(teamId: number, slug: string): Promise<AgentStats> {
@@ -713,10 +844,7 @@ export async function getFleetStats(teamId: number): Promise<FleetStats> {
         liveSessionCount: wire.liveCount,
         sessions24hCount: wire.sessionsInWindowCount,
         spend24hUsd: wire.spendInWindowUsd,
-        // Approvals roll-up isn't part of this aggregate yet — defer to a
-        // dedicated approvals-stats endpoint. Surfaced as 0 so the tile
-        // renders without an "attention" treatment.
-        approvalsPendingCount: 0,
+        approvalsPendingCount: wire.pendingApprovalsCount,
     }
 }
 
@@ -1027,4 +1155,100 @@ export interface NativeToolCatalogEntry {
 export async function listNativeTools(teamId: number): Promise<NativeToolCatalogEntry[]> {
     const res = await getJson<{ tools: NativeToolCatalogEntry[] }>(posthogUrl(teamId, '/agent_native_tools/'))
     return res.tools
+}
+
+/* ── Approvals ────────────────────────────────────────────────────── */
+
+/**
+ * Wire shape of an `agent_tool_approval_request` row as the Django API surfaces it.
+ * Re-exported from the generated type so callers don't reach into `@/generated`.
+ */
+export type ApprovalRequest = AgentApprovalRequestApi
+export type ApprovalState = AgentApprovalRequestStateEnumApi
+
+export interface ListApprovalsOpts {
+    /** Single state or comma-separated. Defaults to all states on the wire. */
+    state?: ApprovalState | ApprovalState[]
+    /** Narrow to one agent — UUID, not slug. */
+    agentId?: string
+    limit?: number
+    offset?: number
+}
+
+function approvalsQueryString(opts: ListApprovalsOpts): string {
+    const params = new URLSearchParams()
+    if (opts.state) {
+        const value = Array.isArray(opts.state) ? opts.state.join(',') : opts.state
+        params.set('state', value)
+    }
+    if (opts.agentId) {
+        params.set('agent_id', opts.agentId)
+    }
+    if (opts.limit != null) {
+        params.set('limit', String(opts.limit))
+    }
+    if (opts.offset != null) {
+        params.set('offset', String(opts.offset))
+    }
+    const qs = params.toString()
+    return qs ? `?${qs}` : ''
+}
+
+/** Fleet-wide listing — drives the `/approvals` screen. Admin-only on the server. */
+export async function listFleetApprovals(teamId: number, opts: ListApprovalsOpts = {}): Promise<ApprovalRequest[]> {
+    const { results } = await getJson<{ results: ApprovalRequest[] }>(
+        posthogUrl(teamId, `/agent_fleet/approvals/${approvalsQueryString(opts)}`)
+    )
+    return results
+}
+
+/** Per-agent listing — drives the `/agents/<slug>/approvals` tab. Admin-only on the server. */
+export async function listAgentApprovals(
+    teamId: number,
+    slug: string,
+    opts: Omit<ListApprovalsOpts, 'agentId'> = {}
+): Promise<ApprovalRequest[]> {
+    const { results } = await getJson<{ results: ApprovalRequest[] }>(
+        posthogUrl(teamId, `/agent_applications/${encodeURIComponent(slug)}/approvals/${approvalsQueryString(opts)}`)
+    )
+    return results
+}
+
+/** Single-approval detail — full proposed args, assistant snapshot, decision metadata. */
+export async function getApproval(teamId: number, slug: string, approvalId: string): Promise<ApprovalRequest> {
+    return getJson<ApprovalRequest>(
+        posthogUrl(
+            teamId,
+            `/agent_applications/${encodeURIComponent(slug)}/approvals/${encodeURIComponent(approvalId)}/`
+        )
+    )
+}
+
+export interface DecideApprovalInput {
+    decision: 'approve' | 'reject'
+    /** Reason text — surfaced to the model in the synthetic reject result and audit log. */
+    reason?: string
+    /** Edited args. Server 422s when `approver_scope.allow_edit` is false. */
+    edited_args?: Record<string, unknown>
+}
+
+export interface DecideApprovalResponse {
+    ok: boolean
+    state: 'approving' | 'rejected'
+}
+
+/** Decide a queued approval. Janitor flips the row + writes the wake marker. */
+export async function decideApproval(
+    teamId: number,
+    slug: string,
+    approvalId: string,
+    body: DecideApprovalInput
+): Promise<DecideApprovalResponse> {
+    return postJson<DecideApprovalInput, DecideApprovalResponse>(
+        posthogUrl(
+            teamId,
+            `/agent_applications/${encodeURIComponent(slug)}/approvals/${encodeURIComponent(approvalId)}/decide/`
+        ),
+        body
+    )
 }

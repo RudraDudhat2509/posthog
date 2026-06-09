@@ -23,7 +23,7 @@
         { "kind": "native", "id": "@posthog/agent-applications-revisions-retrieve" },
         { "kind": "native", "id": "@posthog/agent-applications-revisions-system-prompt" },
         { "kind": "native", "id": "@posthog/agent-applications-revisions-manifest-retrieve" },
-        { "kind": "native", "id": "@posthog/agent-applications-revisions-file-retrieve" },
+        { "kind": "native", "id": "@posthog/agent-applications-revisions-slack-manifest" },
         { "kind": "native", "id": "@posthog/agent-applications-sessions-list" },
         { "kind": "native", "id": "@posthog/agent-applications-sessions-retrieve" },
         { "kind": "native", "id": "@posthog/agent-applications-session-logs" },
@@ -134,7 +134,8 @@
         {
             "kind": "client",
             "id": "set_secret",
-            "description": "Punch out to the user to set one secret on an agent. The console renders an inline form next to your tool call; the user enters the value, the form saves it via the encrypted env API, and the tool resolves with `{ key, action }` so you can continue. The value never reaches your tool-call history — `purpose` is the only string you see. Use this whenever an agent needs a credential set or rotated; check `agent-applications-env-keys-get` first to decide between `set` and `rotate`. On non-console clients this tool returns `unhandled_client_tool` — fall back to the URL handoff documented in `secrets-and-integrations`.",
+            "interactive": true,
+            "description": "Punch out to the user to set one secret on an agent. INTERACTIVE: this call returns a synthetic `{queued:true, interactive:true, call_id}` envelope immediately — that is NOT the user's answer. End your turn after a brief acknowledgement. The session parks; the user fills out the inline form on their own time. On a fresh turn you receive a wake message `{call_id, ok, result|error}` carrying the real outcome (`{key, action: 'set'}` on success, `user_cancelled` if they cancel). Match by `call_id`. Use this whenever an agent needs a credential set or rotated; check `agent-applications-env-keys-get` first to decide between `set` and `rotate`. The value never reaches your tool-call history — `purpose` is the only string you see. On non-console clients this tool returns `unhandled_client_tool` immediately — fall back to the URL handoff documented in `secrets-and-integrations`.",
             "args_schema": {
                 "type": "object",
                 "properties": {
@@ -289,7 +290,12 @@
         {
             "id": "secrets-and-integrations",
             "path": "skills/secrets-and-integrations.md",
-            "description": "Wiring credentials without seeing them — the punch-out flow, integrations vs secrets, what to do when a tool needs auth. Load when the user mentions any API key, OAuth, integration, or auth-related error."
+            "description": "Wiring credentials without seeing them — when to invoke the `set_secret` client tool (the inline form rendered next to your tool call), when to fall back to a deep-link, integrations vs secrets, trigger-required keys (e.g. SLACK_SIGNING_SECRET / SLACK_BOT_TOKEN), what to do when a tool needs auth. ALWAYS load when the user mentions a secret, env key, API key, OAuth, integration, missing credential, Slack setup, or any auth-related error — `set_secret` is the default path in agent-console clients, do not hand out URLs to /connections without loading this skill first."
+        },
+        {
+            "id": "setting-up-slack-app",
+            "path": "skills/setting-up-slack-app.md",
+            "description": "End-to-end script for taking a Slack-triggered agent live: Slack-side app creation, OAuth scopes, event subscriptions, the promote-before-URL ordering, and the per-app secrets (SLACK_SIGNING_SECRET / SLACK_BOT_TOKEN). The 'Tuning the slack trigger' section covers mention_only / auto_resume_threads / allow_workspace_participants (who may drive a thread) / ack_reaction and how to pick + wire them; 'Letting the bot read the thread it's in' covers @posthog/slack-read-thread. Load whenever a user wants their agent to listen on Slack, asks about @-mention vs thread behavior, who can reply in a thread, emoji reactions, or reading thread context."
         },
         {
             "id": "designing-mcp-surfaces",

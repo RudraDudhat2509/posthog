@@ -14,7 +14,6 @@ import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { z } from 'zod'
 
-import { reset } from '@posthog/agent-migrations'
 import {
     AgentSession,
     AgentSpecSchema,
@@ -31,6 +30,7 @@ import {
     SecretBroker,
     wipeTestPrefix,
 } from '@posthog/agent-shared'
+import { reset } from '@posthog/agent-shared/testing'
 
 const KAFKA_HOSTS = process.env.KAFKA_HOSTS ?? 'localhost:9092'
 import { setPosthogInternalClient } from '@posthog/agent-tools'
@@ -599,12 +599,25 @@ describe('Worker', () => {
             // silence. (The driver's in-loop failure path already covers
             // this for failures inside runSession; this regression test pins
             // the same behaviour for failures BEFORE runSession ever runs.)
+            // The text is sanitized via FailureNotifier's `userFacingMessage`
+            // (raw infra detail stays in log_entries / errorMessage) — we
+            // assert it's a non-empty user-readable sentence, not the raw
+            // exception string.
             const last = after!.conversation[after!.conversation.length - 1] as
-                | { role: string; content: Array<{ type: string; text?: string }>; stopReason?: string }
+                | {
+                      role: string
+                      content: Array<{ type: string; text?: string }>
+                      stopReason?: string
+                      errorMessage?: string
+                  }
                 | undefined
             expect(last?.role).toBe('assistant')
             expect(last?.stopReason).toBe('error')
-            expect(last?.content?.[0]?.text).toMatch(/failed before it could start/i)
+            const text = last?.content?.[0]?.text ?? ''
+            expect(text.length).toBeGreaterThan(0)
+            expect(text).not.toMatch(/docker|kafka|redis|stack|streamable http/i)
+            // Raw reason is preserved on `errorMessage` for owner-facing debug.
+            expect(last?.errorMessage).toBeTruthy()
         }
     )
 

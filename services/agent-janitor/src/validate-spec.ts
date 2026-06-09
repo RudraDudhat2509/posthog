@@ -23,14 +23,19 @@ export type ValidationCode =
     | 'no_triggers'
     | 'missing_entrypoint'
     | 'unknown_native_tool'
-    | 'missing_custom_tool_compiled'
-    | 'missing_custom_tool_schema'
-    | 'missing_skill'
     | 'invalid_cron_schedule'
     | 'cron_schedule_too_frequent'
     | 'invalid_cron_timezone'
     | 'duplicate_cron_name'
     | 'unknown_cron_placeholder'
+
+/**
+ * Non-blocking soft signals — surface to the author before freeze, but the
+ * runner will still load the revision. Kept as a typed union for future
+ * use; the orphan_skill/tool warnings became structurally impossible once
+ * the typed authoring API landed and spec.skills/tools are server-derived.
+ */
+export type ValidationWarningCode = never
 
 /**
  * Placeholder set authors can use inside `external_key` and `prompt` on a
@@ -63,17 +68,37 @@ export interface ValidationError {
     pointer: string
 }
 
+export interface ValidationWarning {
+    code: ValidationWarningCode
+    message: string
+    /** Bundle path the warning attaches to (e.g. "tools/incidentio-list-schedules/"). */
+    pointer: string
+}
+
 export interface ValidationReport {
     ok: boolean
     revision_id: string
     revision_state: AgentRevision['state']
     errors: ValidationError[]
+    /**
+     * Soft signals — the author probably wants to act on these before
+     * freezing, but the runner won't reject the revision. Currently:
+     *   - `orphan_custom_tool_dir`: a `tools/<id>/schema.json` exists in
+     *     the bundle but no `spec.tools[]` entry references it. Catches
+     *     the "wrote the tool source but forgot to add the spec ref"
+     *     bug that's the most common authoring foot-gun, especially
+     *     for AI authors.
+     *   - `orphan_skill_file`: a `skills/.../SKILL.md` exists in the
+     *     bundle but no `spec.skills[]` entry references it. Same shape.
+     */
+    warnings: ValidationWarning[]
     /** Native tool ids referenced by the spec that resolved fine. */
     resolved_natives: string[]
 }
 
 export async function validateRevisionBundle(rev: AgentRevision, bundle: BundleStore): Promise<ValidationReport> {
     const errors: ValidationError[] = []
+    const warnings: ValidationWarning[] = []
     const resolvedNatives: string[] = []
 
     // An agent with no triggers has no surface to be invoked through — every
@@ -96,6 +121,15 @@ export async function validateRevisionBundle(rev: AgentRevision, bundle: BundleS
         })
     }
 
+    // Tool / skill bundle-presence checks used to live here (orphan
+    // detection, missing source / schema). With the typed authoring API
+    // (`docs/agent-platform/plans/typed-bundle-authoring-api.md`) those
+    // failures are structurally impossible: `spec.tools[]` /
+    // `spec.skills[]` are server-derived at freeze from the actual typed
+    // resources in the bundle, so a missing-file failure means the freeze
+    // never derived the entry in the first place. The native-tool
+    // registry check below is still real (an unregistered `@posthog/X`
+    // can land in spec via the author-facing `PUT /spec`).
     for (const [i, tool] of rev.spec.tools.entries()) {
         if (tool.kind === 'native') {
             if (!hasNativeTool(tool.id)) {
@@ -107,42 +141,8 @@ export async function validateRevisionBundle(rev: AgentRevision, bundle: BundleS
             } else {
                 resolvedNatives.push(tool.id)
             }
-            continue
         }
-        if (tool.kind === 'client') {
-            // Client tools live entirely in the spec — no bundle artifacts
-            // to validate, no runtime registry to check. Whether the call
-            // succeeds depends on whether the connecting client implements
-            // the id, which we can't know at freeze time.
-            continue
-        }
-        const base = tool.path.replace(/\/$/, '')
-        const compiled = `${base}/compiled.js`
-        const schema = `${base}/schema.json`
-        if (!(await bundle.exists(rev.id, compiled))) {
-            errors.push({
-                code: 'missing_custom_tool_compiled',
-                message: `custom tool "${tool.id}" is missing "${compiled}"`,
-                pointer: `spec.tools[${i}].path`,
-            })
-        }
-        if (!(await bundle.exists(rev.id, schema))) {
-            errors.push({
-                code: 'missing_custom_tool_schema',
-                message: `custom tool "${tool.id}" is missing "${schema}"`,
-                pointer: `spec.tools[${i}].path`,
-            })
-        }
-    }
-
-    for (const [i, skill] of rev.spec.skills.entries()) {
-        if (!(await bundle.exists(rev.id, skill.path))) {
-            errors.push({
-                code: 'missing_skill',
-                message: `skill "${skill.id}" path "${skill.path}" is not present in the bundle`,
-                pointer: `spec.skills[${i}].path`,
-            })
-        }
+        // kind:'custom' / kind:'client' need no presence check — see above.
     }
 
     // Cron-specific freeze-time checks. Zod has already validated the field
@@ -220,6 +220,7 @@ export async function validateRevisionBundle(rev: AgentRevision, bundle: BundleS
         revision_id: rev.id,
         revision_state: rev.state,
         errors,
+        warnings,
         resolved_natives: resolvedNatives,
     }
 }

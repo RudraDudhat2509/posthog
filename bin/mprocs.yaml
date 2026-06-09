@@ -220,8 +220,17 @@ procs:
             tech: Rust
 
     agent-ingress:
+        # Re-source `.env.local` on every restart so an in-mprocs restart
+        # picks up vars added after the parent `bin/start` launched —
+        # specifically `AGENT_INGRESS_PUBLIC_URL`, which `bin/agent-tunnel`
+        # writes after the stack is already up. `set -a` exports every var
+        # read between it and `set +a`; we skip if the file is absent or
+        # contains 1Password `op://` refs that need `op run` to resolve.
         shell: |-
             bin/wait-for-docker && \
+            if [ -f .env.local ] && ! grep -q 'op://' .env.local; then \
+                set -a; . ./.env.local; set +a; \
+            fi && \
             PORT=${AGENT_INGRESS_PORT:-3030} \
             pnpm --filter @posthog/agent-ingress start:dev
         capability: agent_runtime
@@ -242,6 +251,9 @@ procs:
             layer: Processing
             tech: Node
         env:
+            # /healthz liveness server port. Lines up after ingress (3030) and
+            # janitor (3031) so the local agent services increment cleanly.
+            AGENT_RUNNER_HEALTH_PORT: '3032'
             # Local LLM analytics — same target the ai-gateway uses. Project
             # token writes to the dev team's project; without this the runner
             # falls back to NoopAnalyticsSink and `$ai_*` events vanish.
@@ -597,13 +609,9 @@ procs:
             layer: Infrastructure
             tech: Migrations
 
-    migrate-agent-runtime:
-        shell: 'bin/wait-for-docker && bin/migrate --scope=agent_runtime'
-        capability: agent_runtime
-        ready_pattern: 'All migrations completed successfully'
-        groups:
-            layer: Infrastructure
-            tech: Migrations
+    # agent_platform schema is now Django-owned in its product DB, migrated by
+    # the main `migrate` process (migrate_product_databases). The old node-side
+    # migrate-agent-runtime process was removed.
 
     migrate-persons-db:
         shell: 'bin/wait-for-docker && bin/migrate --scope=persons'

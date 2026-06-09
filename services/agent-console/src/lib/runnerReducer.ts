@@ -18,7 +18,7 @@
  *   tool_call                → `{ id, name, args }`    finalize tool_call args
  *   tool_result              → `{ id, tool, outcome, output }` set result
  *   completed                → `{ turns, summary? }`   state=completed
- *   waiting                  → `{ turns, prompt }`     state=awaiting_approval
+ *   waiting                  → `{ turns, prompt }`     state=awaiting_user_input
  *   failed                   → `{ reason, turns }`     state=failed
  */
 
@@ -142,17 +142,20 @@ export function applyEvent(session: ChatSession, event: SessionEvent): ChatSessi
         }
 
         case 'tool_result': {
-            // Runner emits `{ name, id, ok: boolean, error?: string, output?: unknown }`
-            // (see services/agent-runner/src/loop/driver.ts). The reducer
-            // used to read `outcome` / `output` which silently failed on
-            // every tool call — `outcome` was always undefined, so every
-            // live tool call rendered as `{ ok: false, error: "" }` until
-            // a reload pulled the right shape from the persisted
-            // conversation. Read the actual keys instead.
             const id = asString(event.data.id)
             const ok = event.data.ok === true
             const output = event.data.output
             const errorText = typeof event.data.error === 'string' ? event.data.error : ''
+            // Interactive client tools return a synthetic `{queued:true, interactive:true}`
+            // envelope from `execute` so the loop unwinds — the call is still
+            // pending the user's form submission. Leave `part.result` unset so
+            // PartRenderer keeps the inline slot mounted, but flip the
+            // fulfillment to 'client' so the slot logic actually runs.
+            if (ok && isInteractiveQueuedEnvelope(output)) {
+                return updateActiveAssistant(session, (parts) =>
+                    parts.map((p) => (p.kind === 'tool_call' && p.callId === id ? { ...p, fulfillment: 'client' } : p))
+                )
+            }
             return updateActiveAssistant(session, (parts) =>
                 parts.map((p) => {
                     if (p.kind !== 'tool_call' || p.callId !== id) {
@@ -166,6 +169,23 @@ export function applyEvent(session: ChatSession, event: SessionEvent): ChatSessi
             )
         }
 
+        case 'client_tool_result': {
+            // Wake fired by the runner's resume scanner after `/send` delivered
+            // the user's form outcome. Locate the matching tool_call across
+            // every assistant turn (the queued envelope may have completed
+            // turns ago) and finalise its result.
+            const id = asString(event.data.call_id)
+            const hasError = typeof event.data.error === 'string'
+            const result = hasError
+                ? ({ ok: false, error: (event.data.error as string) || 'client_tool_failed' } as const)
+                : ({ ok: true, body: event.data.result ?? null } as const)
+            return updateTurnsAcrossAssistants(session, (parts) =>
+                parts.map((p) =>
+                    p.kind === 'tool_call' && p.callId === id ? { ...p, fulfillment: 'client', result } : p
+                )
+            )
+        }
+
         case 'assistant_text':
             // Turn-end snapshot of the full text; deltas already wrote
             // it. Also marks the turn as no-longer-streaming.
@@ -175,7 +195,11 @@ export function applyEvent(session: ChatSession, event: SessionEvent): ChatSessi
             return { ...finalizeActiveTurn(session), state: 'completed' }
 
         case 'waiting':
-            return { ...session, state: 'awaiting_approval' }
+            // Emitted by `@posthog/meta-ask-for-input` — session parks until a
+            // user message lands via /send. Approval-gated tool calls do NOT
+            // park (they return a synthetic queued result; the session keeps
+            // running), so this state is named after what's actually waited on.
+            return { ...session, state: 'awaiting_user_input' }
 
         case 'failed': {
             // Surface a generic, non-leaky message to the end user. The
@@ -227,6 +251,24 @@ function mergeArgsDelta(current: Record<string, unknown>, delta: unknown): Recor
         return { ...current, ...(delta as Record<string, unknown>) }
     }
     return current
+}
+
+function updateTurnsAcrossAssistants(
+    session: ChatSession,
+    transform: (parts: AssistantTurnPart[]) => AssistantTurnPart[]
+): ChatSession {
+    return {
+        ...session,
+        turns: session.turns.map<Turn>((t) => (t.kind === 'assistant' ? { ...t, parts: transform(t.parts) } : t)),
+    }
+}
+
+function isInteractiveQueuedEnvelope(output: unknown): boolean {
+    if (!output || typeof output !== 'object') {
+        return false
+    }
+    const o = output as Record<string, unknown>
+    return o.queued === true && o.interactive === true && typeof o.call_id === 'string'
 }
 
 function updateActiveAssistant(

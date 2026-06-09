@@ -12,6 +12,7 @@
  */
 
 export * from './spec/spec'
+export * from './spec/slack-manifest'
 export * from './spec/summarize-conversation'
 export * from './spec/tool'
 export * from './spec/framework-preamble'
@@ -20,6 +21,7 @@ export * from './spec/trigger-secrets'
 
 export * from './storage/bundle'
 export * from './storage/s3-bundle-store'
+export * from './storage/typed-bundle'
 
 export * from './persistence/queue'
 export * from './persistence/revision-store'
@@ -42,16 +44,21 @@ export * from './sandbox/secret-broker'
 
 export * from './runtime/analytics-sink'
 export * from './runtime/bus'
+export * from './runtime/client-tool-result-marker'
 export * from './runtime/credential-broker'
 export * from './runtime/pg-credential-broker'
 export * from './runtime/log-sink'
 export * from './runtime/logger'
+export * from './runtime/instrument'
 export * from './runtime/process-handlers'
 export * from './runtime/encryption'
 export * from './runtime/team-api-key-resolver'
 export * from './runtime/gateway-client'
+export * from './runtime/failure-notifier'
 export * from './runtime/http-client'
 export * from './runtime/internal-jwt'
+export * from './runtime/slack-failure-notifier'
+export * from './runtime/slack-secret-resolver'
 
 export * from './config/platform'
 

@@ -8,7 +8,7 @@ from posthog.api.csp_reporting import CSPReportingViewSet
 from posthog.api.js_snippet import JsSnippetViewSet
 from posthog.api.query_performance_proxy import QueryPerformanceProxyViewSet
 from posthog.api.routing import DefaultRouterPlusPlus
-from posthog.api.sdk_doctor import SdkDoctorViewSet
+from posthog.api.sdk_health import SdkHealthViewSet
 from posthog.api.wizard import http as wizard
 from posthog.approvals import api as approval_api
 from posthog.settings import CLOUD_DEPLOYMENT, DEBUG, EE_AVAILABLE, TEST
@@ -41,7 +41,9 @@ from products.agent_platform.backend.api import (
     AgentNativeToolsViewSet,
     AgentRevisionViewSet,
 )
-from products.agent_platform.backend.registry_api import AgentCustomToolTemplateViewSet, AgentSkillTemplateViewSet
+
+# Skill / custom-tool template registry disabled pending a rethink.
+# from products.agent_platform.backend.registry_api import AgentCustomToolTemplateViewSet, AgentSkillTemplateViewSet
 from products.ai_observability.backend.api import (
     AIObservabilityClusteringRunViewSet,
     AIObservabilityOfflineEvaluationsViewSet,
@@ -62,6 +64,7 @@ from products.ai_observability.backend.api import (
     LLMProviderKeyValidationViewSet,
     LLMProviderKeyViewSet,
     LLMProxyViewSet,
+    ParserRecipeViewSet,
     PersonalSpendViewSet,
     ReviewQueueItemViewSet,
     ReviewQueueViewSet,
@@ -332,7 +335,7 @@ register_legacy_dual_route_team_nested_viewset(
 )
 
 projects_router.register(r"annotations", annotation.AnnotationsViewSet, "project_annotations", ["project_id"])
-projects_router.register(r"sdk_doctor", SdkDoctorViewSet, "project_sdk_doctor", ["project_id"])
+projects_router.register(r"sdk_health", SdkHealthViewSet, "project_sdk_health", ["project_id"])
 projects_router.register(
     r"activity_log",
     advanced_activity_logs.ActivityLogViewSet,
@@ -1557,18 +1560,15 @@ projects_router.register(
     "project_agent_native_tools",
     ["project_id"],
 )
-projects_router.register(
-    r"agent_skill_templates",
-    AgentSkillTemplateViewSet,
-    "project_agent_skill_templates",
-    ["project_id"],
-)
-projects_router.register(
-    r"agent_custom_tool_templates",
-    AgentCustomToolTemplateViewSet,
-    "project_agent_custom_tool_templates",
-    ["project_id"],
-)
+# Skill / custom-tool template routes disabled pending a registry rethink.
+# projects_router.register(
+#     r"agent_skill_templates", AgentSkillTemplateViewSet,
+#     "project_agent_skill_templates", ["project_id"],
+# )
+# projects_router.register(
+#     r"agent_custom_tool_templates", AgentCustomToolTemplateViewSet,
+#     "project_agent_custom_tool_templates", ["project_id"],
+# )
 projects_router.register(
     r"agent_fleet",
     AgentFleetViewSet,
@@ -1661,6 +1661,13 @@ register_legacy_dual_route_team_nested_viewset(
     r"evaluation_runs",
     EvaluationRunViewSet,
     "project_evaluation_runs",
+    ["team_id"],
+)
+
+projects_router.register(
+    r"llm_analytics/parser_recipes",
+    ParserRecipeViewSet,
+    "project_llm_analytics_parser_recipes",
     ["team_id"],
 )
 
