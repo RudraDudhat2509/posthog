@@ -5,7 +5,7 @@ import { uniqueBy } from 'lib/utils'
 import type { objectTagsLogicType } from './objectTagsLogicType'
 
 export interface ObjectTagsLogicProps {
-    id: number
+    id: string | number
     onChange?: (tags: string[]) => void
 }
 
