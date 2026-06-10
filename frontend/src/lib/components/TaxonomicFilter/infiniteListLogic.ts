@@ -105,7 +105,7 @@ export function getInitialPinnedRowIndex({
 }: {
     results: (TaxonomicDefinitionTypes | SkeletonItem)[]
     taxonomicGroups: TaxonomicFilterGroup[]
-    group: TaxonomicFilterGroup
+    group: TaxonomicFilterGroup | undefined
     listGroupType: TaxonomicFilterGroupType
     groupType: TaxonomicFilterGroupType | undefined
     value: string | number | null | undefined
@@ -511,8 +511,8 @@ export const infiniteListLogic = kea<infiniteListLogicType>([
         isLoading: [(s) => [s.remoteItemsLoading], (remoteItemsLoading) => remoteItemsLoading],
         group: [
             (s) => [s.listGroupType, s.taxonomicGroups],
-            (listGroupType, taxonomicGroups): TaxonomicFilterGroup =>
-                taxonomicGroups.find((g) => g.type === listGroupType) as TaxonomicFilterGroup,
+            (listGroupType, taxonomicGroups): TaxonomicFilterGroup | undefined =>
+                taxonomicGroups.find((g) => g.type === listGroupType),
         ],
         remoteEndpoint: [(s) => [s.group], (group) => group?.endpoint || null],
         minSearchQueryLength: [
@@ -672,7 +672,7 @@ export const infiniteListLogic = kea<infiniteListLogicType>([
                 // maps e.g. "selector" to its display value "CSS Selector"
                 // so a search of "css" matches something
                 function asPostHogName(
-                    g: TaxonomicFilterGroup,
+                    g: TaxonomicFilterGroup | undefined,
                     item: EventDefinition | CohortType
                 ): string | undefined {
                     return g ? getCoreFilterDefinition(g.getName?.(item), g.type)?.label : undefined
@@ -1070,8 +1070,8 @@ export const infiniteListLogic = kea<infiniteListLogicType>([
                 const itemGroup = getItemGroup(selectedItem, values.taxonomicGroups, values.group)
                 const isDisabledItem = selectedItem && itemGroup?.getIsDisabled?.(selectedItem)
 
-                if (!isDisabledItem) {
-                    const itemValue = selectedItem ? itemGroup?.getValue?.(selectedItem) : null
+                if (!isDisabledItem && itemGroup) {
+                    const itemValue = selectedItem ? itemGroup.getValue?.(selectedItem) : null
                     actions.selectItem(itemGroup, itemValue ?? null, selectedItem, {
                         position: values.index,
                     })
