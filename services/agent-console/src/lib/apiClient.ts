@@ -109,6 +109,28 @@ export class ApiError extends Error {
     }
 }
 
+/* ── HogQL (AI observability rollups) ────────────────────────────── */
+
+/** Minimal shape of a `HogQLQuery` response from `/query/`. */
+export interface HogqlResult {
+    results: unknown[][]
+    columns: string[]
+}
+
+/**
+ * Run a read-only HogQL query against the team's own project. Used by the
+ * analytics dashboard to roll up the agents' `$ai_*` observability events
+ * (captured into this team's project by the runner). Requires the `query:read`
+ * OAuth scope; the same-origin proxy forwards the user's token.
+ */
+export async function runHogql(teamId: number, query: string): Promise<HogqlResult> {
+    const res = await postJson<{ query: { kind: string; query: string } }, Partial<HogqlResult>>(
+        posthogUrl(teamId, '/query/'),
+        { query: { kind: 'HogQLQuery', query } }
+    )
+    return { results: res.results ?? [], columns: res.columns ?? [] }
+}
+
 /* ── Applications ────────────────────────────────────────────────── */
 
 export async function listAgents(
@@ -186,7 +208,7 @@ export async function listRevisions(teamId: number, slug: string): Promise<Agent
 interface TypedBundleResponse {
     bundle: {
         agent_md: string
-        skills: { id: string; description: string; body: string; files?: { path: string; content: string }[] }[]
+        skills: { id: string; description: string; body: string }[]
         tools: { id: string; description: string; args_schema: Record<string, unknown>; source: string }[]
     }
 }
@@ -205,14 +227,10 @@ export async function getBundle(teamId: number, slug: string, revisionId: string
     }
     for (const skill of bundle.skills ?? []) {
         out.push({
-            path: `skills/${skill.id}.md`,
+            path: `skills/${skill.id}/SKILL.md`,
             content: skill.body,
             language: 'markdown',
         })
-        for (const f of skill.files ?? []) {
-            const p = `skills/${skill.id}/files/${f.path}`
-            out.push({ path: p, content: f.content, language: languageForPath(p) })
-        }
     }
     for (const tool of bundle.tools ?? []) {
         const sourcePath = `tools/${tool.id}/source.ts`
@@ -977,29 +995,29 @@ export interface AIGatewayLedgerListOpts {
     referenceIdPrefix?: string
 }
 
+// The agent ai_gateway API was dropped for v0 (see the master catch-up merge on
+// ass), so /ai_gateway/wallet/ + /ai_gateway/ledger/ no longer exist server-side.
+// Mock both so the billing UI renders empty instead of erroring; rewire to the
+// real endpoints when the gateway billing read plane ships again.
 export async function getWallet(teamId: number): Promise<AIGatewayWallet> {
-    return getJson<AIGatewayWallet>(posthogUrl(teamId, `/ai_gateway/wallet/`))
+    return {
+        team_id: teamId,
+        available_usd: '0',
+        pending_usd: '0',
+        balance_usd: '0',
+        spendable_usd: '0',
+        currency: 'USD',
+        account: { profile: 'A', overage_allowance_usd: '0', period: 'monthly', period_anchor: '' },
+        rolling_hour_usd: null,
+        kill_switch: { tripped: false, threshold_usd: null, tripped_at: null },
+    }
 }
 
 export async function listLedger(
-    teamId: number,
-    opts: AIGatewayLedgerListOpts = {}
+    _teamId: number,
+    _opts: AIGatewayLedgerListOpts = {}
 ): Promise<AIGatewayLedgerListResponse> {
-    const params = new URLSearchParams()
-    if (opts.limit !== undefined) {
-        params.set('limit', String(opts.limit))
-    }
-    if (opts.cursor) {
-        params.set('cursor', opts.cursor)
-    }
-    if (opts.transactionType) {
-        params.set('transaction_type', opts.transactionType)
-    }
-    if (opts.referenceIdPrefix) {
-        params.set('reference_id_prefix', opts.referenceIdPrefix)
-    }
-    const qs = params.toString()
-    return getJson<AIGatewayLedgerListResponse>(posthogUrl(teamId, `/ai_gateway/ledger/${qs ? `?${qs}` : ''}`))
+    return { results: [], next_cursor: null }
 }
 
 /* ── Memory ──────────────────────────────────────────────────────── */

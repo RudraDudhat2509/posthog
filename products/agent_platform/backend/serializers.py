@@ -81,8 +81,9 @@ class AgentApplicationSerializer(serializers.ModelSerializer):
     slack_events_url = serializers.SerializerMethodField(
         help_text=(
             "Public URL to paste into the Slack app dashboard under Event Subscriptions → Request URL. "
-            "Computed from `AGENT_INGRESS_PUBLIC_URL` + the agent slug. Null when the deployment has no "
-            "public agent-ingress URL configured (e.g. local dev without a tunnel)."
+            "Computed from the agent slug and the deployment's ingress routing mode "
+            "(`AGENT_INGRESS_DOMAIN_SUFFIX` in domain mode, `AGENT_INGRESS_PUBLIC_URL` in path mode). "
+            "Null when no public agent-ingress URL is configured (e.g. local dev without a tunnel)."
         ),
     )
     slack_interactivity_url = serializers.SerializerMethodField(
@@ -91,9 +92,19 @@ class AgentApplicationSerializer(serializers.ModelSerializer):
             "Same source + null behaviour as `slack_events_url`."
         ),
     )
+    ingress_base_url = serializers.SerializerMethodField(
+        help_text=(
+            "Mode-aware base URL the agent's trigger routes hang off — append `/webhook`, `/run`, `/mcp`, etc. "
+            "Domain mode: `https://<slug><suffix>`; path mode: `<public_url>/agents/<slug>`. Same source + null "
+            "behaviour as `slack_events_url` (null when no public ingress URL is configured)."
+        ),
+    )
     created_by = serializers.SerializerMethodField(
         help_text="Resolved creator (id, first_name, email) from `created_by_id`, or null if unset or the user was deleted.",
     )
+    # Explicit so the slug constraint ([a-zA-Z0-9_-], <=63) is visible + enforced
+    # at the API layer rather than only inferred from the model field.
+    slug = serializers.SlugField(max_length=63)
 
     class Meta:
         model = AgentApplication
@@ -112,6 +123,7 @@ class AgentApplicationSerializer(serializers.ModelSerializer):
             "updated_at",
             "slack_events_url",
             "slack_interactivity_url",
+            "ingress_base_url",
         ]
         # encrypted_env is set/cleared via the dedicated `set_env` action;
         # never round-tripped through the standard CRUD payload.
@@ -125,6 +137,7 @@ class AgentApplicationSerializer(serializers.ModelSerializer):
             "updated_at",
             "slack_events_url",
             "slack_interactivity_url",
+            "ingress_base_url",
         ]
 
     @extend_schema_field(_CREATED_BY_SCHEMA)
@@ -139,12 +152,36 @@ class AgentApplicationSerializer(serializers.ModelSerializer):
     def get_slack_interactivity_url(self, obj: AgentApplication) -> str | None:
         return _slack_path_url(obj.slug, "interactivity")
 
+    @extend_schema_field({"type": "string", "format": "uri", "nullable": True})
+    def get_ingress_base_url(self, obj: AgentApplication) -> str | None:
+        # Empty path → the base the routes hang off (`…/agents/<slug>` in path
+        # mode, `https://<slug><suffix>` in domain mode).
+        return agent_ingress_route_url(obj.slug, "")
+
+
+def agent_ingress_route_url(slug: str, path: str) -> str | None:
+    """Absolute URL of an agent's ingress route, matching what the deployed
+    ingress actually serves. Mode mirrors `AGENT_INGRESS_ROUTING_MODE` (and the
+    ingress's own `ROUTING_MODE`):
+
+      domain → ``https://<slug><suffix><path>``    (slug in host, routes at root)
+      path   → ``<public_url>/agents/<slug><path>`` (slug in path)
+
+    `path` is the leading-slash route (e.g. `/slack/events`). Returns None when
+    the active mode's required setting is unset or `slug` is empty — the caller
+    omits the field, signalling "not externally reachable".
+    """
+    if not slug:
+        return None
+    if settings.AGENT_INGRESS_ROUTING_MODE == "domain":
+        suffix = (settings.AGENT_INGRESS_DOMAIN_SUFFIX or "").strip()
+        return f"https://{slug}{suffix}{path}" if suffix else None
+    base = (settings.AGENT_INGRESS_PUBLIC_URL or "").rstrip("/")
+    return f"{base}/agents/{slug}{path}" if base else None
+
 
 def _slack_path_url(slug: str, suffix: str) -> str | None:
-    base = (settings.AGENT_INGRESS_PUBLIC_URL or "").rstrip("/")
-    if not base or not slug:
-        return None
-    return f"{base}/agents/{slug}/slack/{suffix}"
+    return agent_ingress_route_url(slug, f"/slack/{suffix}")
 
 
 @extend_schema_field(AGENT_SPEC_JSON_SCHEMA)
@@ -267,17 +304,20 @@ class WriteSpecRequestSerializer(serializers.Serializer):
     spec = serializers.DictField(child=serializers.JSONField())
 
 
-class _SkillFileSerializer(serializers.Serializer):
-    path = serializers.CharField(allow_blank=False, trim_whitespace=False)
-    content = serializers.CharField(allow_blank=True, trim_whitespace=False)
-
-
 class WriteSkillRequestSerializer(serializers.Serializer):
-    """Body shape for PUT /revisions/<id>/skills/<skill_id>/."""
+    """Body shape for PUT /revisions/<id>/skills/<skill_id>/. The body is stored
+    at the canonical `skills/<skill_id>/SKILL.md` path in the bundle."""
 
-    description = serializers.CharField(allow_blank=False, trim_whitespace=False)
-    body = serializers.CharField(allow_blank=True, trim_whitespace=False)
-    files = serializers.ListField(child=_SkillFileSerializer(), required=False, default=list)
+    description = serializers.CharField(
+        allow_blank=False,
+        trim_whitespace=False,
+        help_text="One-line summary shown in the skill index; the model uses it to decide when to load the skill.",
+    )
+    body = serializers.CharField(
+        allow_blank=True,
+        trim_whitespace=False,
+        help_text="The skill's full markdown body, stored at `skills/<skill_id>/SKILL.md`.",
+    )
 
 
 class WriteToolRequestSerializer(serializers.Serializer):
@@ -285,7 +325,7 @@ class WriteToolRequestSerializer(serializers.Serializer):
 
     description = serializers.CharField(allow_blank=False, trim_whitespace=False)
     args_schema = serializers.DictField(child=serializers.JSONField())
-    source = serializers.CharField(allow_blank=False, trim_whitespace=False)
+    source = serializers.CharField(allow_blank=False, trim_whitespace=False)  # type: ignore[assignment]  # field named `source` shadows DRF Field.source
 
 
 class WriteTypedBundleRequestSerializer(serializers.Serializer):

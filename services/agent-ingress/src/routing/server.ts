@@ -7,13 +7,13 @@
 import express, { Express, Request, Response } from 'express'
 import type { Pool } from 'pg'
 
-import type { IdentityStore, IntegrationStore } from '@posthog/agent-shared'
-import { createLogger, RevisionStore, SessionQueue } from '@posthog/agent-shared'
+import type { IdentityStore, IntegrationStore, SecretResolver } from '@posthog/agent-shared'
+import { createLogger, RevisionStore, SessionQueue, triggerAuthConfig } from '@posthog/agent-shared'
 
 const log = createLogger('ingress')
 
 import { SessionEventBus } from '@posthog/agent-shared'
-import type { AgentSpec } from '@posthog/agent-shared'
+import type { AuthConfig } from '@posthog/agent-shared'
 
 import { AuthProvider, PUBLIC_ONLY_AUTH_PROVIDER } from '../enqueue/auth'
 import { chatTrigger } from '../triggers/chat'
@@ -22,7 +22,7 @@ import { resolveAgent } from '../triggers/resolve'
 import { slackTrigger } from '../triggers/slack'
 import type { RouteAuthKind, TriggerModule } from '../triggers/types'
 import { webhookTrigger } from '../triggers/webhook'
-import { asyncHandler, errorHandler } from './http-utils'
+import { asyncHandler, errorHandler, requestLogger } from './http-utils'
 import { RevisionResolver, RoutingMode } from './resolver'
 
 /**
@@ -40,7 +40,7 @@ const TRIGGER_MODULES: TriggerModule[] = [chatTrigger, slackTrigger, webhookTrig
  * properties of undefined`. Production wires a real `EncryptedFields`-backed
  * resolver — see services/agent-ingress/src/index.ts.
  */
-const UNCONFIGURED_SLACK_SIGNING_SECRET_RESOLVER: import('../triggers/slack').SlackSigningSecretResolver = {
+const UNCONFIGURED_SLACK_SIGNING_SECRET_RESOLVER: SecretResolver = {
     async resolve(): Promise<string | null> {
         return null
     },
@@ -52,17 +52,17 @@ const UNCONFIGURED_SLACK_SIGNING_SECRET_RESOLVER: import('../triggers/slack').Sl
  * a PAT" or "shared_secret in X-Acme-Secret header" — not just "uses agent
  * auth, look it up yourself."
  */
-function resolveRouteAuth(kind: RouteAuthKind, specAuth: AgentSpec['auth']): Record<string, unknown> {
+function resolveRouteAuth(kind: RouteAuthKind, triggerAuth: AuthConfig | null): Record<string, unknown> {
     if (kind === 'public') {
         return { mode: 'public' }
     }
     if (kind === 'slack_signing') {
         return { mode: 'slack_signing', header: 'X-Slack-Signature' }
     }
-    // agent_spec — expose the accepted modes verbatim. Each mode is an
+    // agent_spec — expose the trigger's accepted modes verbatim. Each mode is an
     // already-discriminated `{type, ...}` object; clients introspect to
     // pick a header / token shape they can send.
-    return { modes: specAuth.modes }
+    return { modes: triggerAuth?.modes ?? [] }
 }
 
 export interface BuildAppOpts {
@@ -73,6 +73,9 @@ export interface BuildAppOpts {
     routingMode: RoutingMode
     domainSuffix?: string
     pathPrefix?: string
+    /** Path-mode public base URL the MCP connect-info endpoint advertises
+     *  (`<publicBaseUrl>/agents/<slug>/mcp`). Ignored in domain mode. */
+    publicBaseUrl?: string
     /**
      * Resolves the Slack signing secret named by `slack.config.signing_secret_ref`
      * on the agent's spec. In production: pulls the entry from the agent's
@@ -81,7 +84,7 @@ export interface BuildAppOpts {
      * is absent, the slack trigger boots but every request 500s on
      * `signing_secret_unresolved`.
      */
-    slackSigningSecretResolver?: import('../triggers/slack').SlackSigningSecretResolver
+    slackSigningSecretResolver?: SecretResolver
     authProvider?: AuthProvider
     /** Optional identity store — Slack trigger uses this to mint stable AgentUser ids. */
     identities?: IdentityStore
@@ -124,6 +127,9 @@ export interface BuildAppOpts {
 
 export function buildApp(opts: BuildAppOpts): Express {
     const app = express()
+    // First in the chain so it sees — and times — every request, including
+    // those that never match a route (404s) or fail body parsing (400s).
+    app.use(requestLogger(log))
     const bus = opts.bus
     const resolver = new RevisionResolver({
         revisions: opts.revisions,
@@ -171,6 +177,9 @@ export function buildApp(opts: BuildAppOpts): Express {
         posthogDb: opts.posthogDb ?? null,
         broker: opts.credentialBroker,
         http: opts.http,
+        routingMode: opts.routingMode,
+        domainSuffix: opts.domainSuffix,
+        publicBaseUrl: opts.publicBaseUrl,
     } as const
     const mount = opts.routingMode === 'path' ? `${opts.pathPrefix ?? '/agents'}/:slug` : ''
 
@@ -190,16 +199,20 @@ export function buildApp(opts: BuildAppOpts): Express {
                 return
             }
             const configured = new Set(resolved.revision.spec.triggers.map((t) => t.type))
-            const triggers = TRIGGER_MODULES.filter((m) => configured.has(m.type)).map((m) => ({
-                type: m.type,
-                routes: m.routes.map((r) => ({
-                    method: r.method,
-                    path: r.path,
-                    ...(r.bodySchema ? { bodySchema: r.bodySchema } : {}),
-                    ...(r.querySchema ? { querySchema: r.querySchema } : {}),
-                    auth: resolveRouteAuth(r.auth, resolved.revision.spec.auth),
-                })),
-            }))
+            const triggers = TRIGGER_MODULES.filter((m) => configured.has(m.type)).map((m) => {
+                const specTrigger = resolved.revision.spec.triggers.find((t) => t.type === m.type)
+                const triggerAuth = specTrigger ? triggerAuthConfig(specTrigger) : null
+                return {
+                    type: m.type,
+                    routes: m.routes.map((r) => ({
+                        method: r.method,
+                        path: r.path,
+                        ...(r.bodySchema ? { bodySchema: r.bodySchema } : {}),
+                        ...(r.querySchema ? { querySchema: r.querySchema } : {}),
+                        auth: resolveRouteAuth(r.auth, triggerAuth),
+                    })),
+                }
+            })
             res.json({
                 agent: { slug: resolved.application.slug, name: resolved.application.name },
                 triggers,

@@ -22,7 +22,10 @@ export interface AgentApplicationApi {
     readonly team_id: number
     /** @maxLength 255 */
     name: string
-    /** @maxLength 63 */
+    /**
+     * @maxLength 63
+     * @pattern ^[-a-zA-Z0-9_]+$
+     */
     slug: string
     description?: string
     /** @nullable */
@@ -40,7 +43,7 @@ export interface AgentApplicationApi {
     readonly created_at: string
     readonly updated_at: string
     /**
-     * Public URL to paste into the Slack app dashboard under Event Subscriptions → Request URL. Computed from `AGENT_INGRESS_PUBLIC_URL` + the agent slug. Null when the deployment has no public agent-ingress URL configured (e.g. local dev without a tunnel).
+     * Public URL to paste into the Slack app dashboard under Event Subscriptions → Request URL. Computed from the agent slug and the deployment's ingress routing mode (`AGENT_INGRESS_DOMAIN_SUFFIX` in domain mode, `AGENT_INGRESS_PUBLIC_URL` in path mode). Null when no public agent-ingress URL is configured (e.g. local dev without a tunnel).
      * @nullable
      */
     readonly slack_events_url: string | null
@@ -49,6 +52,11 @@ export interface AgentApplicationApi {
      * @nullable
      */
     readonly slack_interactivity_url: string | null
+    /**
+     * Mode-aware base URL the agent's trigger routes hang off — append `/webhook`, `/run`, `/mcp`, etc. Domain mode: `https://<slug><suffix>`; path mode: `<public_url>/agents/<slug>`. Same source + null behaviour as `slack_events_url` (null when no public ingress URL is configured).
+     * @nullable
+     */
+    readonly ingress_base_url: string | null
 }
 
 export interface PaginatedAgentApplicationListApi {
@@ -177,9 +185,9 @@ export interface AgentMemoryTreeResponseApi {
 
 /**
  * * `draft` - draft
- * `ready` - ready
- * `live` - live
- * `archived` - archived
+ * * `ready` - ready
+ * * `live` - live
+ * * `archived` - archived
  */
 export type AgentRevisionStateEnumApi = (typeof AgentRevisionStateEnumApi)[keyof typeof AgentRevisionStateEnumApi]
 
@@ -217,7 +225,33 @@ export type AgentRevisionApiSpecTriggersItem =
           type: 'webhook'
           config: {
               path: string
-              secret?: string
+          }
+          auth: {
+              modes?: (
+                  | {
+                        type: 'public'
+                        acknowledge_public_exposure: true
+                    }
+                  | {
+                        type: 'posthog'
+                        scopes?: string[]
+                    }
+                  | {
+                        type: 'jwt'
+                        /** @minLength 1 */
+                        issuer_secret_ref: string
+                    }
+                  | {
+                        type: 'shared_secret'
+                        /** @minLength 1 */
+                        header: string
+                        /** @minLength 1 */
+                        secret_ref: string
+                    }
+                  | {
+                        type: 'posthog_internal'
+                    }
+              )[]
           }
       }
     | {
@@ -244,13 +278,69 @@ export type AgentRevisionApiSpecTriggersItem =
       }
     | {
           type: 'chat'
-          config: {
-              require_auth: boolean
+          config?: {
+              allow_restart?: boolean
+          }
+          auth: {
+              modes?: (
+                  | {
+                        type: 'public'
+                        acknowledge_public_exposure: true
+                    }
+                  | {
+                        type: 'posthog'
+                        scopes?: string[]
+                    }
+                  | {
+                        type: 'jwt'
+                        /** @minLength 1 */
+                        issuer_secret_ref: string
+                    }
+                  | {
+                        type: 'shared_secret'
+                        /** @minLength 1 */
+                        header: string
+                        /** @minLength 1 */
+                        secret_ref: string
+                    }
+                  | {
+                        type: 'posthog_internal'
+                    }
+              )[]
           }
       }
     | {
           type: 'mcp'
-          config: { [key: string]: unknown }
+          config?: {
+              allow_restart?: boolean
+          }
+          auth: {
+              modes?: (
+                  | {
+                        type: 'public'
+                        acknowledge_public_exposure: true
+                    }
+                  | {
+                        type: 'posthog'
+                        scopes?: string[]
+                    }
+                  | {
+                        type: 'jwt'
+                        /** @minLength 1 */
+                        issuer_secret_ref: string
+                    }
+                  | {
+                        type: 'shared_secret'
+                        /** @minLength 1 */
+                        header: string
+                        /** @minLength 1 */
+                        secret_ref: string
+                    }
+                  | {
+                        type: 'posthog_internal'
+                    }
+              )[]
+          }
       }
 
 export type AgentRevisionApiSpecToolsItem =
@@ -378,38 +468,6 @@ export type AgentRevisionApiSpecLimits = {
     max_output_tokens?: number
 }
 
-export type AgentRevisionApiSpecAuthModesItem =
-    | {
-          type: 'public'
-          acknowledge_public_exposure: true
-      }
-    | {
-          type: 'oauth'
-          /** @minLength 1 */
-          issuer: string
-          scopes?: string[]
-      }
-    | {
-          type: 'pat'
-      }
-    | {
-          type: 'jwt'
-          /** @minLength 1 */
-          issuer_secret_ref: string
-      }
-    | {
-          type: 'shared_secret'
-          /** @minLength 1 */
-          header: string
-      }
-    | {
-          type: 'posthog_internal'
-      }
-
-export type AgentRevisionApiSpecAuth = {
-    modes?: AgentRevisionApiSpecAuthModesItem[]
-}
-
 export type AgentRevisionApiSpec = {
     /** @minLength 1 */
     model: string
@@ -421,7 +479,6 @@ export type AgentRevisionApiSpec = {
     secrets: string[]
     limits: AgentRevisionApiSpecLimits
     entrypoint: string
-    auth: AgentRevisionApiSpecAuth
     reasoning?: AgentRevisionApiSpecReasoning
 }
 
@@ -482,7 +539,33 @@ export type PatchedAgentRevisionApiSpecTriggersItem =
           type: 'webhook'
           config: {
               path: string
-              secret?: string
+          }
+          auth: {
+              modes?: (
+                  | {
+                        type: 'public'
+                        acknowledge_public_exposure: true
+                    }
+                  | {
+                        type: 'posthog'
+                        scopes?: string[]
+                    }
+                  | {
+                        type: 'jwt'
+                        /** @minLength 1 */
+                        issuer_secret_ref: string
+                    }
+                  | {
+                        type: 'shared_secret'
+                        /** @minLength 1 */
+                        header: string
+                        /** @minLength 1 */
+                        secret_ref: string
+                    }
+                  | {
+                        type: 'posthog_internal'
+                    }
+              )[]
           }
       }
     | {
@@ -509,13 +592,69 @@ export type PatchedAgentRevisionApiSpecTriggersItem =
       }
     | {
           type: 'chat'
-          config: {
-              require_auth: boolean
+          config?: {
+              allow_restart?: boolean
+          }
+          auth: {
+              modes?: (
+                  | {
+                        type: 'public'
+                        acknowledge_public_exposure: true
+                    }
+                  | {
+                        type: 'posthog'
+                        scopes?: string[]
+                    }
+                  | {
+                        type: 'jwt'
+                        /** @minLength 1 */
+                        issuer_secret_ref: string
+                    }
+                  | {
+                        type: 'shared_secret'
+                        /** @minLength 1 */
+                        header: string
+                        /** @minLength 1 */
+                        secret_ref: string
+                    }
+                  | {
+                        type: 'posthog_internal'
+                    }
+              )[]
           }
       }
     | {
           type: 'mcp'
-          config: { [key: string]: unknown }
+          config?: {
+              allow_restart?: boolean
+          }
+          auth: {
+              modes?: (
+                  | {
+                        type: 'public'
+                        acknowledge_public_exposure: true
+                    }
+                  | {
+                        type: 'posthog'
+                        scopes?: string[]
+                    }
+                  | {
+                        type: 'jwt'
+                        /** @minLength 1 */
+                        issuer_secret_ref: string
+                    }
+                  | {
+                        type: 'shared_secret'
+                        /** @minLength 1 */
+                        header: string
+                        /** @minLength 1 */
+                        secret_ref: string
+                    }
+                  | {
+                        type: 'posthog_internal'
+                    }
+              )[]
+          }
       }
 
 export type PatchedAgentRevisionApiSpecToolsItem =
@@ -643,38 +782,6 @@ export type PatchedAgentRevisionApiSpecLimits = {
     max_output_tokens?: number
 }
 
-export type PatchedAgentRevisionApiSpecAuthModesItem =
-    | {
-          type: 'public'
-          acknowledge_public_exposure: true
-      }
-    | {
-          type: 'oauth'
-          /** @minLength 1 */
-          issuer: string
-          scopes?: string[]
-      }
-    | {
-          type: 'pat'
-      }
-    | {
-          type: 'jwt'
-          /** @minLength 1 */
-          issuer_secret_ref: string
-      }
-    | {
-          type: 'shared_secret'
-          /** @minLength 1 */
-          header: string
-      }
-    | {
-          type: 'posthog_internal'
-      }
-
-export type PatchedAgentRevisionApiSpecAuth = {
-    modes?: PatchedAgentRevisionApiSpecAuthModesItem[]
-}
-
 export type PatchedAgentRevisionApiSpecReasoning =
     (typeof PatchedAgentRevisionApiSpecReasoning)[keyof typeof PatchedAgentRevisionApiSpecReasoning]
 
@@ -697,7 +804,6 @@ export type PatchedAgentRevisionApiSpec = {
     secrets: string[]
     limits: PatchedAgentRevisionApiSpecLimits
     entrypoint: string
-    auth: PatchedAgentRevisionApiSpecAuth
     reasoning?: PatchedAgentRevisionApiSpecReasoning
 }
 
@@ -742,18 +848,15 @@ export interface WriteAgentMdRequestApi {
 
 export type WriteTypedBundleRequestApiSpec = { [key: string]: unknown }
 
-export interface _SkillFileApi {
-    path: string
-    content: string
-}
-
 /**
- * Body shape for PUT /revisions/<id>/skills/<skill_id>/.
+ * Body shape for PUT /revisions/<id>/skills/<skill_id>/. The body is stored
+ * at the canonical `skills/<skill_id>/SKILL.md` path in the bundle.
  */
 export interface WriteSkillRequestApi {
+    /** One-line summary shown in the skill index; the model uses it to decide when to load the skill. */
     description: string
+    /** The skill's full markdown body, stored at `skills/<skill_id>/SKILL.md`. */
     body: string
-    files?: _SkillFileApi[]
 }
 
 export type WriteToolRequestApiArgsSchema = { [key: string]: unknown }
@@ -769,7 +872,7 @@ export interface WriteToolRequestApi {
 
 /**
  * Body shape for PUT /revisions/<id>/bundle/ — the full-replace typed
-payload. See docs/agent-platform/plans/typed-bundle-authoring-api.md §3.
+ * payload. See docs/agent-platform/plans/typed-bundle-authoring-api.md §3.
  */
 export interface WriteTypedBundleRequestApi {
     agent_md: string
@@ -780,7 +883,7 @@ export interface WriteTypedBundleRequestApi {
 
 /**
  * Body shape for POST /revisions/<id>/clone_from/ — copy every file
-from `source_revision_id` into this (draft) revision.
+ * from `source_revision_id` into this (draft) revision.
  */
 export interface CloneFromRequestApi {
     source_revision_id: string
@@ -830,7 +933,7 @@ export type WriteSpecRequestApiSpec = { [key: string]: unknown }
 
 /**
  * Body shape for PUT /revisions/<id>/spec/. The body's `spec` object
-is the author-facing slice (skills/tools are server-derived at freeze).
+ * is the author-facing slice (skills/tools are server-derived at freeze).
  */
 export interface WriteSpecRequestApi {
     spec: WriteSpecRequestApiSpec
@@ -861,9 +964,9 @@ export interface AgentRevisionValidateResponseApi {
 
 /**
  * Body shape for POST /revisions/clone_from/ — atomically create a new
-draft revision under `application_id` and clone its initial bundle from
-`source_revision_id`. Convenience for the "edit live" flow so the MCP
-doesn't have to do create-then-clone-from in two calls.
+ * draft revision under `application_id` and clone its initial bundle from
+ * `source_revision_id`. Convenience for the "edit live" flow so the MCP
+ * doesn't have to do create-then-clone-from in two calls.
  */
 export interface NewDraftRevisionRequestApi {
     application_id: string
@@ -885,7 +988,10 @@ export interface PatchedAgentApplicationApi {
     readonly team_id?: number
     /** @maxLength 255 */
     name?: string
-    /** @maxLength 63 */
+    /**
+     * @maxLength 63
+     * @pattern ^[-a-zA-Z0-9_]+$
+     */
     slug?: string
     description?: string
     /** @nullable */
@@ -903,7 +1009,7 @@ export interface PatchedAgentApplicationApi {
     readonly created_at?: string
     readonly updated_at?: string
     /**
-     * Public URL to paste into the Slack app dashboard under Event Subscriptions → Request URL. Computed from `AGENT_INGRESS_PUBLIC_URL` + the agent slug. Null when the deployment has no public agent-ingress URL configured (e.g. local dev without a tunnel).
+     * Public URL to paste into the Slack app dashboard under Event Subscriptions → Request URL. Computed from the agent slug and the deployment's ingress routing mode (`AGENT_INGRESS_DOMAIN_SUFFIX` in domain mode, `AGENT_INGRESS_PUBLIC_URL` in path mode). Null when no public agent-ingress URL is configured (e.g. local dev without a tunnel).
      * @nullable
      */
     readonly slack_events_url?: string | null
@@ -912,15 +1018,20 @@ export interface PatchedAgentApplicationApi {
      * @nullable
      */
     readonly slack_interactivity_url?: string | null
+    /**
+     * Mode-aware base URL the agent's trigger routes hang off — append `/webhook`, `/run`, `/mcp`, etc. Domain mode: `https://<slug><suffix>`; path mode: `<public_url>/agents/<slug>`. Same source + null behaviour as `slack_events_url` (null when no public ingress URL is configured).
+     * @nullable
+     */
+    readonly ingress_base_url?: string | null
 }
 
 /**
  * * `queued` - queued
- * `approving` - approving
- * `dispatched` - dispatched
- * `dispatched_failed` - dispatched_failed
- * `rejected` - rejected
- * `expired` - expired
+ * * `approving` - approving
+ * * `dispatched` - dispatched
+ * * `dispatched_failed` - dispatched_failed
+ * * `rejected` - rejected
+ * * `expired` - expired
  */
 export type AgentApprovalRequestStateEnumApi =
     (typeof AgentApprovalRequestStateEnumApi)[keyof typeof AgentApprovalRequestStateEnumApi]
@@ -990,13 +1101,13 @@ export interface AgentApprovalRequestApi {
     /** Resolved approver policy (approvers, allow_edit, allow_agent_approver) at request time. */
     approver_scope: AgentApprovalRequestApiApproverScope
     /** Lifecycle state. `queued` = awaiting an approver; `approving` = decision landed and tool dispatch is in flight; `dispatched`/`dispatched_failed` = approved + tool ran; `rejected` = approver said no; `expired` = TTL elapsed.
-
-  * `queued` - queued
-  * `approving` - approving
-  * `dispatched` - dispatched
-  * `dispatched_failed` - dispatched_failed
-  * `rejected` - rejected
-  * `expired` - expired */
+     *
+     * * `queued` - queued
+     * * `approving` - approving
+     * * `dispatched` - dispatched
+     * * `dispatched_failed` - dispatched_failed
+     * * `rejected` - rejected
+     * * `expired` - expired */
     state: AgentApprovalRequestStateEnumApi
     /**
      * UUID of the user who decided. Null while queued or expired.
@@ -1036,7 +1147,7 @@ export type DecideApprovalRequestApiEditedArgs = { [key: string]: unknown }
 
 /**
  * * `approve` - approve
- * `reject` - reject
+ * * `reject` - reject
  */
 export type DecisionEnumApi = (typeof DecisionEnumApi)[keyof typeof DecisionEnumApi]
 
@@ -1047,14 +1158,14 @@ export const DecisionEnumApi = {
 
 /**
  * Body shape for POST /agent_applications/<id>/approvals/<approval_id>/decide/.
-
-See docs/agent-platform/plans/approval-gated-tools.md.
+ *
+ * See docs/agent-platform/plans/approval-gated-tools.md.
  */
 export interface DecideApprovalRequestApi {
     /** The approver's decision. `approve` runs the tool platform-side with the (possibly edited) args; `reject` records a terminal rejection and wakes the session with a synthetic rejected tool_result.
-
-  * `approve` - approve
-  * `reject` - reject */
+     *
+     * * `approve` - approve
+     * * `reject` - reject */
     decision: DecisionEnumApi
     /** Approver-edited tool arguments. Only honoured when the tool's `approval_policy.allow_edit` is `true`; otherwise the janitor returns 422. */
     edited_args?: DecideApprovalRequestApiEditedArgs
@@ -1082,10 +1193,10 @@ export interface AgentApplicationEnvKeyStatusApi {
 
 /**
  * Body shape for AgentApplicationViewSet.env_keys_set — single secret upsert.
-
-The view merges `{KEY: value}` into the existing encrypted env block
-without touching other keys, so callers can set or rotate one secret
-without needing to read the whole block back.
+ *
+ * The view merges `{KEY: value}` into the existing encrypted env block
+ * without touching other keys, so callers can set or rotate one secret
+ * without needing to read the whole block back.
  */
 export interface SetEnvKeyRequestApi {
     value: string
@@ -1114,11 +1225,11 @@ export interface AgentApplicationPreviewTokenResponseApi {
     token: string
     /** Token TTL in seconds from issue. Clients should refresh before this elapses. */
     expires_in: number
-    /** Slug to use in the ingress URL — `<application_slug>-<revision_uuid_hex>`. Identifies the exact revision in the path-routing prefix. */
+    /** Slug to use in the ingress URL — `<application_slug>-<revision_uuid_hex>`. Identifies the exact revision, placed in the host (domain mode) or path (path mode) routing prefix. */
     ingress_slug: string
-    /** Per-trigger ingress URLs the caller can hit directly, derived from the revision's `spec.triggers[]`. Shape: `{<trigger_type>: {<route_name>: <absolute_url>}}`. Only includes triggers the spec actually declares. Empty when `AGENT_INGRESS_PUBLIC_URL` is unset. */
+    /** Per-trigger ingress URLs the caller can hit directly, derived from the revision's `spec.triggers[]`. Shape: `{<trigger_type>: {<route_name>: <absolute_url>}}`. Only includes triggers the spec actually declares. Empty when no public agent-ingress URL is configured for the active routing mode. */
     endpoints: unknown
-    /** How to attach credentials to those endpoints: preview-token header/query names, the agent's `spec.auth.modes`, and a note about the live vs preview-mode gate split. Lets the caller wire auth without grepping the ingress source. */
+    /** How to attach credentials to those endpoints: preview-token header/query names, the per-trigger accepted auth modes (`trigger_modes`), and a note about the live vs preview-mode gate split. Lets the caller wire auth without grepping the ingress source. */
     auth: unknown
     /** Server-side alternative — `/api/projects/<team>/agent_applications/<slug>/preview-proxy/<path>` mints the JWT for you. Strips caller Authorization, so it works for public-auth agents; agents with required auth need the direct endpoints above. */
     preview_proxy: unknown
@@ -1138,10 +1249,10 @@ export interface AgentSessionUsageTotalApi {
 
 /**
  * * `anonymous` - anonymous
- * `service` - service
- * `internal` - internal
- * `shared_secret` - shared_secret
- * `slack` - slack
+ * * `service` - service
+ * * `internal` - internal
+ * * `shared_secret` - shared_secret
+ * * `slack` - slack
  */
 export type AgentSessionPrincipalKindEnumApi =
     (typeof AgentSessionPrincipalKindEnumApi)[keyof typeof AgentSessionPrincipalKindEnumApi]
@@ -1156,12 +1267,12 @@ export const AgentSessionPrincipalKindEnumApi = {
 
 export interface AgentSessionPrincipalApi {
     /** What kind of principal authenticated the session start.
-
-  * `anonymous` - anonymous
-  * `service` - service
-  * `internal` - internal
-  * `shared_secret` - shared_secret
-  * `slack` - slack */
+     *
+     * * `anonymous` - anonymous
+     * * `service` - service
+     * * `internal` - internal
+     * * `shared_secret` - shared_secret
+     * * `slack` - slack */
     kind: AgentSessionPrincipalKindEnumApi
     /** Stable identifier for the principal (PAT id, slack user id, etc). Absent for anonymous sessions. */
     id?: string
@@ -1171,11 +1282,11 @@ export interface AgentSessionPrincipalApi {
 
 /**
  * * `queued` - queued
- * `running` - running
- * `completed` - completed
- * `closed` - closed
- * `cancelled` - cancelled
- * `failed` - failed
+ * * `running` - running
+ * * `completed` - completed
+ * * `closed` - closed
+ * * `cancelled` - cancelled
+ * * `failed` - failed
  */
 export type AgentSessionStateEnumApi = (typeof AgentSessionStateEnumApi)[keyof typeof AgentSessionStateEnumApi]
 
@@ -1256,10 +1367,10 @@ export const AgentConversationAssistantMessageApiRole = {
 
 /**
  * * `stop` - stop
- * `length` - length
- * `toolUse` - toolUse
- * `error` - error
- * `aborted` - aborted
+ * * `length` - length
+ * * `toolUse` - toolUse
+ * * `error` - error
+ * * `aborted` - aborted
  */
 export type StopReasonEnumApi = (typeof StopReasonEnumApi)[keyof typeof StopReasonEnumApi]
 
@@ -1355,9 +1466,9 @@ export type SetEnvRequestApiEnv = { [key: string]: string }
 
 /**
  * Body shape for AgentApplicationViewSet.set_env.
-
-`env` is a JSON object of string→string. The view encrypts it via the
-same Fernet schedule the worker uses to decrypt.
+ *
+ * `env` is a JSON object of string→string. The view encrypts it via the
+ * same Fernet schedule the worker uses to decrypt.
  */
 export interface SetEnvRequestApi {
     env: SetEnvRequestApiEnv

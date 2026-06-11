@@ -3,25 +3,25 @@
  * MCP service uses these Zod schemas for generated tool handlers.
  * To regenerate: hogli build:openapi
  *
- * PostHog API - MCP 35 enabled ops
+ * PostHog API - MCP 34 enabled ops
  * OpenAPI spec version: 1.0.0
  */
 import * as zod from 'zod'
 
 /**
  * Agent applications — the deployable unit of the platform.
-
-URLs:
-    GET    /api/projects/<team>/agent_applications/             list
-    POST   /api/projects/<team>/agent_applications/             create
-    GET    /api/projects/<team>/agent_applications/<id|slug>/   retrieve
-    PATCH  /api/projects/<team>/agent_applications/<id|slug>/   update
-    DELETE /api/projects/<team>/agent_applications/<id|slug>/   archive
-    POST   /api/projects/<team>/agent_applications/<id|slug>/set_env/        bulk replace env
-    GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/        list set keys
-    GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  is one key set?
-    PUT    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  set one key
-    DELETE /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  clear one key
+ *
+ * URLs:
+ *     GET    /api/projects/<team>/agent_applications/             list
+ *     POST   /api/projects/<team>/agent_applications/             create
+ *     GET    /api/projects/<team>/agent_applications/<id|slug>/   retrieve
+ *     PATCH  /api/projects/<team>/agent_applications/<id|slug>/   update
+ *     DELETE /api/projects/<team>/agent_applications/<id|slug>/   archive
+ *     POST   /api/projects/<team>/agent_applications/<id|slug>/set_env/        bulk replace env
+ *     GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/        list set keys
+ *     GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  is one key set?
+ *     PUT    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  set one key
+ *     DELETE /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  clear one key
  */
 export const AgentApplicationsListParams = /* @__PURE__ */ zod.object({
     project_id: zod
@@ -38,18 +38,18 @@ export const AgentApplicationsListQueryParams = /* @__PURE__ */ zod.object({
 
 /**
  * Agent applications — the deployable unit of the platform.
-
-URLs:
-    GET    /api/projects/<team>/agent_applications/             list
-    POST   /api/projects/<team>/agent_applications/             create
-    GET    /api/projects/<team>/agent_applications/<id|slug>/   retrieve
-    PATCH  /api/projects/<team>/agent_applications/<id|slug>/   update
-    DELETE /api/projects/<team>/agent_applications/<id|slug>/   archive
-    POST   /api/projects/<team>/agent_applications/<id|slug>/set_env/        bulk replace env
-    GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/        list set keys
-    GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  is one key set?
-    PUT    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  set one key
-    DELETE /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  clear one key
+ *
+ * URLs:
+ *     GET    /api/projects/<team>/agent_applications/             list
+ *     POST   /api/projects/<team>/agent_applications/             create
+ *     GET    /api/projects/<team>/agent_applications/<id|slug>/   retrieve
+ *     PATCH  /api/projects/<team>/agent_applications/<id|slug>/   update
+ *     DELETE /api/projects/<team>/agent_applications/<id|slug>/   archive
+ *     POST   /api/projects/<team>/agent_applications/<id|slug>/set_env/        bulk replace env
+ *     GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/        list set keys
+ *     GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  is one key set?
+ *     PUT    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  set one key
+ *     DELETE /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  clear one key
  */
 export const AgentApplicationsCreateParams = /* @__PURE__ */ zod.object({
     project_id: zod
@@ -63,41 +63,42 @@ export const agentApplicationsCreateBodyNameMax = 255
 
 export const agentApplicationsCreateBodySlugMax = 63
 
+export const agentApplicationsCreateBodySlugRegExp = new RegExp('^[-a-zA-Z0-9_]+$')
 export const agentApplicationsCreateBodyArchivedDefault = false
 
 export const AgentApplicationsCreateBody = /* @__PURE__ */ zod.object({
     name: zod.string().max(agentApplicationsCreateBodyNameMax),
-    slug: zod.string().max(agentApplicationsCreateBodySlugMax),
+    slug: zod.string().max(agentApplicationsCreateBodySlugMax).regex(agentApplicationsCreateBodySlugRegExp),
     description: zod.string().optional(),
     archived: zod.boolean().default(agentApplicationsCreateBodyArchivedDefault),
 })
 
 /**
  * Revisions of an agent. Created in `draft`, promoted through
-`ready → live` once the bundle has been uploaded + frozen.
-
-URLs (nested under an application):
-
-    Model CRUD:
-        GET   .../revisions/                       list
-        POST  .../revisions/                       create draft
-        GET   .../revisions/<id>/                  retrieve
-        PATCH .../revisions/<id>/                  update spec (draft only)
-
-    Lifecycle:
-        POST  .../revisions/<id>/promote/          ready → live
-        POST  .../revisions/<id>/archive/          → archived
-        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
-        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
-        POST  .../revisions/new_draft/             create draft + clone_from atomically
-
-    Bundle authoring (proxied to the janitor):
-        GET    .../revisions/<id>/manifest/        list paths + sha256
-        GET    .../revisions/<id>/file/?path=…     read one file
-        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
-        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
-        GET    .../revisions/<id>/bundle/          bulk pull all files
-        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ * `ready → live` once the bundle has been uploaded + frozen.
+ *
+ * URLs (nested under an application):
+ *
+ *     Model CRUD:
+ *         GET   .../revisions/                       list
+ *         POST  .../revisions/                       create draft
+ *         GET   .../revisions/<id>/                  retrieve
+ *         PATCH .../revisions/<id>/                  update spec (draft only)
+ *
+ *     Lifecycle:
+ *         POST  .../revisions/<id>/promote/          ready → live
+ *         POST  .../revisions/<id>/archive/          → archived
+ *         POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+ *         POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+ *         POST  .../revisions/new_draft/             create draft + clone_from atomically
+ *
+ *     Bundle authoring (proxied to the janitor):
+ *         GET    .../revisions/<id>/manifest/        list paths + sha256
+ *         GET    .../revisions/<id>/file/?path=…     read one file
+ *         PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+ *         DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+ *         GET    .../revisions/<id>/bundle/          bulk pull all files
+ *         PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
  */
 export const AgentApplicationsRevisionsListParams = /* @__PURE__ */ zod.object({
     application_id: zod.string(),
@@ -115,30 +116,30 @@ export const AgentApplicationsRevisionsListQueryParams = /* @__PURE__ */ zod.obj
 
 /**
  * Revisions of an agent. Created in `draft`, promoted through
-`ready → live` once the bundle has been uploaded + frozen.
-
-URLs (nested under an application):
-
-    Model CRUD:
-        GET   .../revisions/                       list
-        POST  .../revisions/                       create draft
-        GET   .../revisions/<id>/                  retrieve
-        PATCH .../revisions/<id>/                  update spec (draft only)
-
-    Lifecycle:
-        POST  .../revisions/<id>/promote/          ready → live
-        POST  .../revisions/<id>/archive/          → archived
-        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
-        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
-        POST  .../revisions/new_draft/             create draft + clone_from atomically
-
-    Bundle authoring (proxied to the janitor):
-        GET    .../revisions/<id>/manifest/        list paths + sha256
-        GET    .../revisions/<id>/file/?path=…     read one file
-        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
-        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
-        GET    .../revisions/<id>/bundle/          bulk pull all files
-        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ * `ready → live` once the bundle has been uploaded + frozen.
+ *
+ * URLs (nested under an application):
+ *
+ *     Model CRUD:
+ *         GET   .../revisions/                       list
+ *         POST  .../revisions/                       create draft
+ *         GET   .../revisions/<id>/                  retrieve
+ *         PATCH .../revisions/<id>/                  update spec (draft only)
+ *
+ *     Lifecycle:
+ *         POST  .../revisions/<id>/promote/          ready → live
+ *         POST  .../revisions/<id>/archive/          → archived
+ *         POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+ *         POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+ *         POST  .../revisions/new_draft/             create draft + clone_from atomically
+ *
+ *     Bundle authoring (proxied to the janitor):
+ *         GET    .../revisions/<id>/manifest/        list paths + sha256
+ *         GET    .../revisions/<id>/file/?path=…     read one file
+ *         PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+ *         DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+ *         GET    .../revisions/<id>/bundle/          bulk pull all files
+ *         PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
  */
 export const AgentApplicationsRevisionsCreateParams = /* @__PURE__ */ zod.object({
     application_id: zod.string(),
@@ -153,6 +154,7 @@ export const agentApplicationsRevisionsCreateBodyBundleUriDefault = ``
 export const agentApplicationsRevisionsCreateBodySpecTriggersItemOneConfigMentionOnlyDefault = false
 export const agentApplicationsRevisionsCreateBodySpecTriggersItemOneConfigAutoResumeThreadsDefault = false
 export const agentApplicationsRevisionsCreateBodySpecTriggersItemOneConfigAllowWorkspaceParticipantsDefault = false
+export const agentApplicationsRevisionsCreateBodySpecTriggersItemTwoAuthModesItemTwoScopesDefault = []
 
 export const agentApplicationsRevisionsCreateBodySpecTriggersItemThreeConfigTimezoneDefault = `UTC`
 export const agentApplicationsRevisionsCreateBodySpecTriggersItemThreeConfigPromptMax = 4096
@@ -161,8 +163,14 @@ export const agentApplicationsRevisionsCreateBodySpecTriggersItemThreeConfigCatc
 export const agentApplicationsRevisionsCreateBodySpecTriggersItemThreeConfigMaxCatchUpAgeSecondsDefault = 3600
 export const agentApplicationsRevisionsCreateBodySpecTriggersItemThreeConfigMaxCatchUpAgeSecondsMax = 604800
 
-export const agentApplicationsRevisionsCreateBodySpecTriggersItemFourConfigRequireAuthDefault = true
-export const agentApplicationsRevisionsCreateBodySpecTriggersItemFiveConfigDefault = {}
+export const agentApplicationsRevisionsCreateBodySpecTriggersItemFourConfigAllowRestartDefault = false
+export const agentApplicationsRevisionsCreateBodySpecTriggersItemFourConfigDefault = { allow_restart: false }
+export const agentApplicationsRevisionsCreateBodySpecTriggersItemFourAuthModesItemTwoScopesDefault = []
+
+export const agentApplicationsRevisionsCreateBodySpecTriggersItemFiveConfigAllowRestartDefault = false
+export const agentApplicationsRevisionsCreateBodySpecTriggersItemFiveConfigDefault = { allow_restart: false }
+export const agentApplicationsRevisionsCreateBodySpecTriggersItemFiveAuthModesItemTwoScopesDefault = []
+
 export const agentApplicationsRevisionsCreateBodySpecTriggersDefault = []
 export const agentApplicationsRevisionsCreateBodySpecToolsItemOneRequiresApprovalDefault = false
 export const agentApplicationsRevisionsCreateBodySpecToolsItemOneApprovalPolicyAllowEditDefault = false
@@ -223,7 +231,6 @@ export const agentApplicationsRevisionsCreateBodySpecLimitsDefault = {
     max_wall_seconds: 900,
 }
 export const agentApplicationsRevisionsCreateBodySpecEntrypointDefault = `agent.md`
-export const agentApplicationsRevisionsCreateBodySpecAuthModesItemTwoScopesDefault = []
 
 export const AgentApplicationsRevisionsCreateBody = /* @__PURE__ */ zod.object({
     parent_revision: zod.uuid().nullish(),
@@ -266,7 +273,38 @@ export const AgentApplicationsRevisionsCreateBody = /* @__PURE__ */ zod.object({
                             type: zod.literal('webhook'),
                             config: zod.object({
                                 path: zod.string(),
-                                secret: zod.string().optional(),
+                            }),
+                            auth: zod.object({
+                                modes: zod
+                                    .array(
+                                        zod.union([
+                                            zod.object({
+                                                type: zod.literal('public'),
+                                                acknowledge_public_exposure: zod.boolean(),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('posthog'),
+                                                scopes: zod
+                                                    .array(zod.string())
+                                                    .default(
+                                                        agentApplicationsRevisionsCreateBodySpecTriggersItemTwoAuthModesItemTwoScopesDefault
+                                                    ),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('jwt'),
+                                                issuer_secret_ref: zod.string().min(1),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('shared_secret'),
+                                                header: zod.string().min(1),
+                                                secret_ref: zod.string().min(1),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('posthog_internal'),
+                                            }),
+                                        ])
+                                    )
+                                    .optional(),
                             }),
                         }),
                         zod.object({
@@ -302,19 +340,91 @@ export const AgentApplicationsRevisionsCreateBody = /* @__PURE__ */ zod.object({
                         }),
                         zod.object({
                             type: zod.literal('chat'),
-                            config: zod.object({
-                                require_auth: zod
-                                    .boolean()
-                                    .default(
-                                        agentApplicationsRevisionsCreateBodySpecTriggersItemFourConfigRequireAuthDefault
-                                    ),
+                            config: zod
+                                .object({
+                                    allow_restart: zod
+                                        .boolean()
+                                        .default(
+                                            agentApplicationsRevisionsCreateBodySpecTriggersItemFourConfigAllowRestartDefault
+                                        ),
+                                })
+                                .default(agentApplicationsRevisionsCreateBodySpecTriggersItemFourConfigDefault),
+                            auth: zod.object({
+                                modes: zod
+                                    .array(
+                                        zod.union([
+                                            zod.object({
+                                                type: zod.literal('public'),
+                                                acknowledge_public_exposure: zod.boolean(),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('posthog'),
+                                                scopes: zod
+                                                    .array(zod.string())
+                                                    .default(
+                                                        agentApplicationsRevisionsCreateBodySpecTriggersItemFourAuthModesItemTwoScopesDefault
+                                                    ),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('jwt'),
+                                                issuer_secret_ref: zod.string().min(1),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('shared_secret'),
+                                                header: zod.string().min(1),
+                                                secret_ref: zod.string().min(1),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('posthog_internal'),
+                                            }),
+                                        ])
+                                    )
+                                    .optional(),
                             }),
                         }),
                         zod.object({
                             type: zod.literal('mcp'),
                             config: zod
-                                .object({})
+                                .object({
+                                    allow_restart: zod
+                                        .boolean()
+                                        .default(
+                                            agentApplicationsRevisionsCreateBodySpecTriggersItemFiveConfigAllowRestartDefault
+                                        ),
+                                })
                                 .default(agentApplicationsRevisionsCreateBodySpecTriggersItemFiveConfigDefault),
+                            auth: zod.object({
+                                modes: zod
+                                    .array(
+                                        zod.union([
+                                            zod.object({
+                                                type: zod.literal('public'),
+                                                acknowledge_public_exposure: zod.boolean(),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('posthog'),
+                                                scopes: zod
+                                                    .array(zod.string())
+                                                    .default(
+                                                        agentApplicationsRevisionsCreateBodySpecTriggersItemFiveAuthModesItemTwoScopesDefault
+                                                    ),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('jwt'),
+                                                issuer_secret_ref: zod.string().min(1),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('shared_secret'),
+                                                header: zod.string().min(1),
+                                                secret_ref: zod.string().min(1),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('posthog_internal'),
+                                            }),
+                                        ])
+                                    )
+                                    .optional(),
+                            }),
                         }),
                     ])
                 )
@@ -521,39 +631,6 @@ export const AgentApplicationsRevisionsCreateBody = /* @__PURE__ */ zod.object({
                 })
                 .default(agentApplicationsRevisionsCreateBodySpecLimitsDefault),
             entrypoint: zod.string().default(agentApplicationsRevisionsCreateBodySpecEntrypointDefault),
-            auth: zod.object({
-                modes: zod
-                    .array(
-                        zod.union([
-                            zod.object({
-                                type: zod.literal('public'),
-                                acknowledge_public_exposure: zod.boolean(),
-                            }),
-                            zod.object({
-                                type: zod.literal('oauth'),
-                                issuer: zod.string().min(1),
-                                scopes: zod
-                                    .array(zod.string())
-                                    .default(agentApplicationsRevisionsCreateBodySpecAuthModesItemTwoScopesDefault),
-                            }),
-                            zod.object({
-                                type: zod.literal('pat'),
-                            }),
-                            zod.object({
-                                type: zod.literal('jwt'),
-                                issuer_secret_ref: zod.string().min(1),
-                            }),
-                            zod.object({
-                                type: zod.literal('shared_secret'),
-                                header: zod.string().min(1),
-                            }),
-                            zod.object({
-                                type: zod.literal('posthog_internal'),
-                            }),
-                        ])
-                    )
-                    .optional(),
-            }),
             reasoning: zod.enum(['minimal', 'low', 'medium', 'high', 'xhigh']).optional(),
         })
         .optional(),
@@ -561,30 +638,30 @@ export const AgentApplicationsRevisionsCreateBody = /* @__PURE__ */ zod.object({
 
 /**
  * Revisions of an agent. Created in `draft`, promoted through
-`ready → live` once the bundle has been uploaded + frozen.
-
-URLs (nested under an application):
-
-    Model CRUD:
-        GET   .../revisions/                       list
-        POST  .../revisions/                       create draft
-        GET   .../revisions/<id>/                  retrieve
-        PATCH .../revisions/<id>/                  update spec (draft only)
-
-    Lifecycle:
-        POST  .../revisions/<id>/promote/          ready → live
-        POST  .../revisions/<id>/archive/          → archived
-        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
-        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
-        POST  .../revisions/new_draft/             create draft + clone_from atomically
-
-    Bundle authoring (proxied to the janitor):
-        GET    .../revisions/<id>/manifest/        list paths + sha256
-        GET    .../revisions/<id>/file/?path=…     read one file
-        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
-        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
-        GET    .../revisions/<id>/bundle/          bulk pull all files
-        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ * `ready → live` once the bundle has been uploaded + frozen.
+ *
+ * URLs (nested under an application):
+ *
+ *     Model CRUD:
+ *         GET   .../revisions/                       list
+ *         POST  .../revisions/                       create draft
+ *         GET   .../revisions/<id>/                  retrieve
+ *         PATCH .../revisions/<id>/                  update spec (draft only)
+ *
+ *     Lifecycle:
+ *         POST  .../revisions/<id>/promote/          ready → live
+ *         POST  .../revisions/<id>/archive/          → archived
+ *         POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+ *         POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+ *         POST  .../revisions/new_draft/             create draft + clone_from atomically
+ *
+ *     Bundle authoring (proxied to the janitor):
+ *         GET    .../revisions/<id>/manifest/        list paths + sha256
+ *         GET    .../revisions/<id>/file/?path=…     read one file
+ *         PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+ *         DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+ *         GET    .../revisions/<id>/bundle/          bulk pull all files
+ *         PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
  */
 export const AgentApplicationsRevisionsRetrieveParams = /* @__PURE__ */ zod.object({
     application_id: zod.string(),
@@ -598,30 +675,30 @@ export const AgentApplicationsRevisionsRetrieveParams = /* @__PURE__ */ zod.obje
 
 /**
  * Revisions of an agent. Created in `draft`, promoted through
-`ready → live` once the bundle has been uploaded + frozen.
-
-URLs (nested under an application):
-
-    Model CRUD:
-        GET   .../revisions/                       list
-        POST  .../revisions/                       create draft
-        GET   .../revisions/<id>/                  retrieve
-        PATCH .../revisions/<id>/                  update spec (draft only)
-
-    Lifecycle:
-        POST  .../revisions/<id>/promote/          ready → live
-        POST  .../revisions/<id>/archive/          → archived
-        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
-        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
-        POST  .../revisions/new_draft/             create draft + clone_from atomically
-
-    Bundle authoring (proxied to the janitor):
-        GET    .../revisions/<id>/manifest/        list paths + sha256
-        GET    .../revisions/<id>/file/?path=…     read one file
-        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
-        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
-        GET    .../revisions/<id>/bundle/          bulk pull all files
-        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ * `ready → live` once the bundle has been uploaded + frozen.
+ *
+ * URLs (nested under an application):
+ *
+ *     Model CRUD:
+ *         GET   .../revisions/                       list
+ *         POST  .../revisions/                       create draft
+ *         GET   .../revisions/<id>/                  retrieve
+ *         PATCH .../revisions/<id>/                  update spec (draft only)
+ *
+ *     Lifecycle:
+ *         POST  .../revisions/<id>/promote/          ready → live
+ *         POST  .../revisions/<id>/archive/          → archived
+ *         POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+ *         POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+ *         POST  .../revisions/new_draft/             create draft + clone_from atomically
+ *
+ *     Bundle authoring (proxied to the janitor):
+ *         GET    .../revisions/<id>/manifest/        list paths + sha256
+ *         GET    .../revisions/<id>/file/?path=…     read one file
+ *         PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+ *         DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+ *         GET    .../revisions/<id>/bundle/          bulk pull all files
+ *         PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
  */
 export const AgentApplicationsRevisionsPartialUpdateParams = /* @__PURE__ */ zod.object({
     application_id: zod.string(),
@@ -636,6 +713,7 @@ export const AgentApplicationsRevisionsPartialUpdateParams = /* @__PURE__ */ zod
 export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemOneConfigMentionOnlyDefault = false
 export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemOneConfigAutoResumeThreadsDefault = false
 export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemOneConfigAllowWorkspaceParticipantsDefault = false
+export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemTwoAuthModesItemTwoScopesDefault = []
 
 export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemThreeConfigTimezoneDefault = `UTC`
 export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemThreeConfigPromptMax = 4096
@@ -644,8 +722,14 @@ export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemThreeCon
 export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemThreeConfigMaxCatchUpAgeSecondsDefault = 3600
 export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemThreeConfigMaxCatchUpAgeSecondsMax = 604800
 
-export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemFourConfigRequireAuthDefault = true
-export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemFiveConfigDefault = {}
+export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemFourConfigAllowRestartDefault = false
+export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemFourConfigDefault = { allow_restart: false }
+export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemFourAuthModesItemTwoScopesDefault = []
+
+export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemFiveConfigAllowRestartDefault = false
+export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemFiveConfigDefault = { allow_restart: false }
+export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemFiveAuthModesItemTwoScopesDefault = []
+
 export const agentApplicationsRevisionsPartialUpdateBodySpecTriggersDefault = []
 export const agentApplicationsRevisionsPartialUpdateBodySpecToolsItemOneRequiresApprovalDefault = false
 export const agentApplicationsRevisionsPartialUpdateBodySpecToolsItemOneApprovalPolicyAllowEditDefault = false
@@ -706,7 +790,6 @@ export const agentApplicationsRevisionsPartialUpdateBodySpecLimitsDefault = {
     max_wall_seconds: 900,
 }
 export const agentApplicationsRevisionsPartialUpdateBodySpecEntrypointDefault = `agent.md`
-export const agentApplicationsRevisionsPartialUpdateBodySpecAuthModesItemTwoScopesDefault = []
 
 export const AgentApplicationsRevisionsPartialUpdateBody = /* @__PURE__ */ zod.object({
     parent_revision: zod.uuid().nullish(),
@@ -749,7 +832,38 @@ export const AgentApplicationsRevisionsPartialUpdateBody = /* @__PURE__ */ zod.o
                             type: zod.literal('webhook'),
                             config: zod.object({
                                 path: zod.string(),
-                                secret: zod.string().optional(),
+                            }),
+                            auth: zod.object({
+                                modes: zod
+                                    .array(
+                                        zod.union([
+                                            zod.object({
+                                                type: zod.literal('public'),
+                                                acknowledge_public_exposure: zod.boolean(),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('posthog'),
+                                                scopes: zod
+                                                    .array(zod.string())
+                                                    .default(
+                                                        agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemTwoAuthModesItemTwoScopesDefault
+                                                    ),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('jwt'),
+                                                issuer_secret_ref: zod.string().min(1),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('shared_secret'),
+                                                header: zod.string().min(1),
+                                                secret_ref: zod.string().min(1),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('posthog_internal'),
+                                            }),
+                                        ])
+                                    )
+                                    .optional(),
                             }),
                         }),
                         zod.object({
@@ -787,19 +901,91 @@ export const AgentApplicationsRevisionsPartialUpdateBody = /* @__PURE__ */ zod.o
                         }),
                         zod.object({
                             type: zod.literal('chat'),
-                            config: zod.object({
-                                require_auth: zod
-                                    .boolean()
-                                    .default(
-                                        agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemFourConfigRequireAuthDefault
-                                    ),
+                            config: zod
+                                .object({
+                                    allow_restart: zod
+                                        .boolean()
+                                        .default(
+                                            agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemFourConfigAllowRestartDefault
+                                        ),
+                                })
+                                .default(agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemFourConfigDefault),
+                            auth: zod.object({
+                                modes: zod
+                                    .array(
+                                        zod.union([
+                                            zod.object({
+                                                type: zod.literal('public'),
+                                                acknowledge_public_exposure: zod.boolean(),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('posthog'),
+                                                scopes: zod
+                                                    .array(zod.string())
+                                                    .default(
+                                                        agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemFourAuthModesItemTwoScopesDefault
+                                                    ),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('jwt'),
+                                                issuer_secret_ref: zod.string().min(1),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('shared_secret'),
+                                                header: zod.string().min(1),
+                                                secret_ref: zod.string().min(1),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('posthog_internal'),
+                                            }),
+                                        ])
+                                    )
+                                    .optional(),
                             }),
                         }),
                         zod.object({
                             type: zod.literal('mcp'),
                             config: zod
-                                .object({})
+                                .object({
+                                    allow_restart: zod
+                                        .boolean()
+                                        .default(
+                                            agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemFiveConfigAllowRestartDefault
+                                        ),
+                                })
                                 .default(agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemFiveConfigDefault),
+                            auth: zod.object({
+                                modes: zod
+                                    .array(
+                                        zod.union([
+                                            zod.object({
+                                                type: zod.literal('public'),
+                                                acknowledge_public_exposure: zod.boolean(),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('posthog'),
+                                                scopes: zod
+                                                    .array(zod.string())
+                                                    .default(
+                                                        agentApplicationsRevisionsPartialUpdateBodySpecTriggersItemFiveAuthModesItemTwoScopesDefault
+                                                    ),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('jwt'),
+                                                issuer_secret_ref: zod.string().min(1),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('shared_secret'),
+                                                header: zod.string().min(1),
+                                                secret_ref: zod.string().min(1),
+                                            }),
+                                            zod.object({
+                                                type: zod.literal('posthog_internal'),
+                                            }),
+                                        ])
+                                    )
+                                    .optional(),
+                            }),
                         }),
                     ])
                 )
@@ -1022,41 +1208,6 @@ export const AgentApplicationsRevisionsPartialUpdateBody = /* @__PURE__ */ zod.o
                 })
                 .default(agentApplicationsRevisionsPartialUpdateBodySpecLimitsDefault),
             entrypoint: zod.string().default(agentApplicationsRevisionsPartialUpdateBodySpecEntrypointDefault),
-            auth: zod.object({
-                modes: zod
-                    .array(
-                        zod.union([
-                            zod.object({
-                                type: zod.literal('public'),
-                                acknowledge_public_exposure: zod.boolean(),
-                            }),
-                            zod.object({
-                                type: zod.literal('oauth'),
-                                issuer: zod.string().min(1),
-                                scopes: zod
-                                    .array(zod.string())
-                                    .default(
-                                        agentApplicationsRevisionsPartialUpdateBodySpecAuthModesItemTwoScopesDefault
-                                    ),
-                            }),
-                            zod.object({
-                                type: zod.literal('pat'),
-                            }),
-                            zod.object({
-                                type: zod.literal('jwt'),
-                                issuer_secret_ref: zod.string().min(1),
-                            }),
-                            zod.object({
-                                type: zod.literal('shared_secret'),
-                                header: zod.string().min(1),
-                            }),
-                            zod.object({
-                                type: zod.literal('posthog_internal'),
-                            }),
-                        ])
-                    )
-                    .optional(),
-            }),
             reasoning: zod.enum(['minimal', 'low', 'medium', 'high', 'xhigh']).optional(),
         })
         .optional(),
@@ -1064,30 +1215,30 @@ export const AgentApplicationsRevisionsPartialUpdateBody = /* @__PURE__ */ zod.o
 
 /**
  * Revisions of an agent. Created in `draft`, promoted through
-`ready → live` once the bundle has been uploaded + frozen.
-
-URLs (nested under an application):
-
-    Model CRUD:
-        GET   .../revisions/                       list
-        POST  .../revisions/                       create draft
-        GET   .../revisions/<id>/                  retrieve
-        PATCH .../revisions/<id>/                  update spec (draft only)
-
-    Lifecycle:
-        POST  .../revisions/<id>/promote/          ready → live
-        POST  .../revisions/<id>/archive/          → archived
-        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
-        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
-        POST  .../revisions/new_draft/             create draft + clone_from atomically
-
-    Bundle authoring (proxied to the janitor):
-        GET    .../revisions/<id>/manifest/        list paths + sha256
-        GET    .../revisions/<id>/file/?path=…     read one file
-        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
-        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
-        GET    .../revisions/<id>/bundle/          bulk pull all files
-        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ * `ready → live` once the bundle has been uploaded + frozen.
+ *
+ * URLs (nested under an application):
+ *
+ *     Model CRUD:
+ *         GET   .../revisions/                       list
+ *         POST  .../revisions/                       create draft
+ *         GET   .../revisions/<id>/                  retrieve
+ *         PATCH .../revisions/<id>/                  update spec (draft only)
+ *
+ *     Lifecycle:
+ *         POST  .../revisions/<id>/promote/          ready → live
+ *         POST  .../revisions/<id>/archive/          → archived
+ *         POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+ *         POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+ *         POST  .../revisions/new_draft/             create draft + clone_from atomically
+ *
+ *     Bundle authoring (proxied to the janitor):
+ *         GET    .../revisions/<id>/manifest/        list paths + sha256
+ *         GET    .../revisions/<id>/file/?path=…     read one file
+ *         PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+ *         DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+ *         GET    .../revisions/<id>/bundle/          bulk pull all files
+ *         PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
  */
 export const AgentApplicationsRevisionsAgentMdUpdateParams = /* @__PURE__ */ zod.object({
     application_id: zod.string(),
@@ -1107,8 +1258,8 @@ export const AgentApplicationsRevisionsAgentMdUpdateBody = /* @__PURE__ */ zod
 
 /**
  * Mark a revision archived. If it was the live one, clear the
-application's live_revision pointer (the app effectively has no
-deployable version until another revision is promoted).
+ * application's live_revision pointer (the app effectively has no
+ * deployable version until another revision is promoted).
  */
 export const AgentApplicationsRevisionsArchiveCreateParams = /* @__PURE__ */ zod.object({
     application_id: zod.string(),
@@ -1135,8 +1286,8 @@ export const AgentApplicationsRevisionsBundleRetrieveParams = /* @__PURE__ */ zo
 
 /**
  * Full-replace the typed bundle. Anything not in the payload is
-deleted. Tool sources are AST-checked + esbuild-compiled by the
-janitor before any S3 writes.
+ * deleted. Tool sources are AST-checked + esbuild-compiled by the
+ * janitor before any S3 writes.
  */
 export const AgentApplicationsRevisionsBundleUpdateParams = /* @__PURE__ */ zod.object({
     application_id: zod.string(),
@@ -1155,18 +1306,18 @@ export const AgentApplicationsRevisionsBundleUpdateBody = /* @__PURE__ */ zod
             .array(
                 zod
                     .object({
-                        description: zod.string(),
-                        body: zod.string(),
-                        files: zod
-                            .array(
-                                zod.object({
-                                    path: zod.string(),
-                                    content: zod.string(),
-                                })
-                            )
-                            .optional(),
+                        description: zod
+                            .string()
+                            .describe(
+                                'One-line summary shown in the skill index; the model uses it to decide when to load the skill.'
+                            ),
+                        body: zod
+                            .string()
+                            .describe("The skill's full markdown body, stored at `skills/<skill_id>/SKILL.md`."),
                     })
-                    .describe('Body shape for PUT /revisions/<id>/skills/<skill_id>/.')
+                    .describe(
+                        'Body shape for PUT /revisions/<id>/skills/<skill_id>/. The body is stored\nat the canonical `skills/<skill_id>/SKILL.md` path in the bundle.'
+                    )
             )
             .optional(),
         tools: zod
@@ -1209,14 +1360,14 @@ export const AgentApplicationsRevisionsCloneFromCreateBody = /* @__PURE__ */ zod
 
 /**
  * Fire one cron job out-of-band — the same execution path the
-scheduler walks, but on demand. Authoring UX: the user iterates on
-a cron prompt by clicking 'Fire now' rather than waiting for the
-next scheduled firing. Without this, 'did my prompt do the right
-thing?' is unanswerable until the cron actually fires.
-
-Idempotent via `request_id`: repeat clicks with the same id resolve
-to the same session id rather than firing N times. See
-`docs/agent-platform/plans/cron-trigger-scheduler.md` §9.
+ * scheduler walks, but on demand. Authoring UX: the user iterates on
+ * a cron prompt by clicking 'Fire now' rather than waiting for the
+ * next scheduled firing. Without this, 'did my prompt do the right
+ * thing?' is unanswerable until the cron actually fires.
+ *
+ * Idempotent via `request_id`: repeat clicks with the same id resolve
+ * to the same session id rather than firing N times. See
+ * `docs/agent-platform/plans/cron-trigger-scheduler.md` §9.
  */
 export const AgentApplicationsRevisionsCronFireCreateParams = /* @__PURE__ */ zod.object({
     application_id: zod.string(),
@@ -1240,17 +1391,17 @@ export const AgentApplicationsRevisionsCronFireCreateBody = /* @__PURE__ */ zod.
 
 /**
  * Freeze the bundle: draft → ready, stamps sha256 on the row.
-
-Django is a thin proxy here: resolve template refs into the
-bundle, ask the janitor to seal it (the janitor returns the sha
-+ the spec it derived from the typed resources), then stamp the
-row. No `transaction.atomic()` — the janitor's freeze is idempotent
-(on retry it re-reads the existing `.frozen` marker + re-derives
-spec), so a partial failure here is recoverable by re-calling
-freeze, not by transactional rollback. Holding an atomic block
-across the janitor HTTP call previously deadlocked the
-agent_revision row against the janitor's spec write — that's
-moved off the janitor side as part of the same fix.
+ *
+ * Django is a thin proxy here: resolve template refs into the
+ * bundle, ask the janitor to seal it (the janitor returns the sha
+ * + the spec it derived from the typed resources), then stamp the
+ * row. No `transaction.atomic()` — the janitor's freeze is idempotent
+ * (on retry it re-reads the existing `.frozen` marker + re-derives
+ * spec), so a partial failure here is recoverable by re-calling
+ * freeze, not by transactional rollback. Holding an atomic block
+ * across the janitor HTTP call previously deadlocked the
+ * agent_revision row against the janitor's spec write — that's
+ * moved off the janitor side as part of the same fix.
  */
 export const AgentApplicationsRevisionsFreezeCreateParams = /* @__PURE__ */ zod.object({
     application_id: zod.string(),
@@ -1290,30 +1441,30 @@ export const AgentApplicationsRevisionsPromoteCreateParams = /* @__PURE__ */ zod
 
 /**
  * Revisions of an agent. Created in `draft`, promoted through
-`ready → live` once the bundle has been uploaded + frozen.
-
-URLs (nested under an application):
-
-    Model CRUD:
-        GET   .../revisions/                       list
-        POST  .../revisions/                       create draft
-        GET   .../revisions/<id>/                  retrieve
-        PATCH .../revisions/<id>/                  update spec (draft only)
-
-    Lifecycle:
-        POST  .../revisions/<id>/promote/          ready → live
-        POST  .../revisions/<id>/archive/          → archived
-        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
-        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
-        POST  .../revisions/new_draft/             create draft + clone_from atomically
-
-    Bundle authoring (proxied to the janitor):
-        GET    .../revisions/<id>/manifest/        list paths + sha256
-        GET    .../revisions/<id>/file/?path=…     read one file
-        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
-        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
-        GET    .../revisions/<id>/bundle/          bulk pull all files
-        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ * `ready → live` once the bundle has been uploaded + frozen.
+ *
+ * URLs (nested under an application):
+ *
+ *     Model CRUD:
+ *         GET   .../revisions/                       list
+ *         POST  .../revisions/                       create draft
+ *         GET   .../revisions/<id>/                  retrieve
+ *         PATCH .../revisions/<id>/                  update spec (draft only)
+ *
+ *     Lifecycle:
+ *         POST  .../revisions/<id>/promote/          ready → live
+ *         POST  .../revisions/<id>/archive/          → archived
+ *         POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+ *         POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+ *         POST  .../revisions/new_draft/             create draft + clone_from atomically
+ *
+ *     Bundle authoring (proxied to the janitor):
+ *         GET    .../revisions/<id>/manifest/        list paths + sha256
+ *         GET    .../revisions/<id>/file/?path=…     read one file
+ *         PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+ *         DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+ *         GET    .../revisions/<id>/bundle/          bulk pull all files
+ *         PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
  */
 export const agentApplicationsRevisionsSkillsUpdatePathSkillIdRegExp = new RegExp('^[a-z0-9][a-z0-9_-]*$')
 
@@ -1330,45 +1481,41 @@ export const AgentApplicationsRevisionsSkillsUpdateParams = /* @__PURE__ */ zod.
 
 export const AgentApplicationsRevisionsSkillsUpdateBody = /* @__PURE__ */ zod
     .object({
-        description: zod.string(),
-        body: zod.string(),
-        files: zod
-            .array(
-                zod.object({
-                    path: zod.string(),
-                    content: zod.string(),
-                })
-            )
-            .optional(),
+        description: zod
+            .string()
+            .describe('One-line summary shown in the skill index; the model uses it to decide when to load the skill.'),
+        body: zod.string().describe("The skill's full markdown body, stored at `skills/<skill_id>/SKILL.md`."),
     })
-    .describe('Body shape for PUT /revisions/<id>/skills/<skill_id>/.')
+    .describe(
+        'Body shape for PUT /revisions/<id>/skills/<skill_id>/. The body is stored\nat the canonical `skills/<skill_id>/SKILL.md` path in the bundle.'
+    )
 
 /**
  * Revisions of an agent. Created in `draft`, promoted through
-`ready → live` once the bundle has been uploaded + frozen.
-
-URLs (nested under an application):
-
-    Model CRUD:
-        GET   .../revisions/                       list
-        POST  .../revisions/                       create draft
-        GET   .../revisions/<id>/                  retrieve
-        PATCH .../revisions/<id>/                  update spec (draft only)
-
-    Lifecycle:
-        POST  .../revisions/<id>/promote/          ready → live
-        POST  .../revisions/<id>/archive/          → archived
-        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
-        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
-        POST  .../revisions/new_draft/             create draft + clone_from atomically
-
-    Bundle authoring (proxied to the janitor):
-        GET    .../revisions/<id>/manifest/        list paths + sha256
-        GET    .../revisions/<id>/file/?path=…     read one file
-        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
-        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
-        GET    .../revisions/<id>/bundle/          bulk pull all files
-        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ * `ready → live` once the bundle has been uploaded + frozen.
+ *
+ * URLs (nested under an application):
+ *
+ *     Model CRUD:
+ *         GET   .../revisions/                       list
+ *         POST  .../revisions/                       create draft
+ *         GET   .../revisions/<id>/                  retrieve
+ *         PATCH .../revisions/<id>/                  update spec (draft only)
+ *
+ *     Lifecycle:
+ *         POST  .../revisions/<id>/promote/          ready → live
+ *         POST  .../revisions/<id>/archive/          → archived
+ *         POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+ *         POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+ *         POST  .../revisions/new_draft/             create draft + clone_from atomically
+ *
+ *     Bundle authoring (proxied to the janitor):
+ *         GET    .../revisions/<id>/manifest/        list paths + sha256
+ *         GET    .../revisions/<id>/file/?path=…     read one file
+ *         PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+ *         DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+ *         GET    .../revisions/<id>/bundle/          bulk pull all files
+ *         PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
  */
 export const agentApplicationsRevisionsSkillsDestroyPathSkillIdRegExp = new RegExp('^[a-z0-9][a-z0-9_-]*$')
 
@@ -1385,12 +1532,12 @@ export const AgentApplicationsRevisionsSkillsDestroyParams = /* @__PURE__ */ zod
 
 /**
  * Build a Slack app manifest for this revision's slack trigger.
-
-Deterministic: the OAuth scopes and bot event subscriptions are derived
-from the slack trigger config (`mention_only` / `auto_resume_threads` /
-`ack_reaction`) and the agent's Slack tools, so the manifest already
-subscribes to exactly the events the config needs. 400 if the revision
-has no slack trigger.
+ *
+ * Deterministic: the OAuth scopes and bot event subscriptions are derived
+ * from the slack trigger config (`mention_only` / `auto_resume_threads` /
+ * `ack_reaction`) and the agent's Slack tools, so the manifest already
+ * subscribes to exactly the events the config needs. 400 if the revision
+ * has no slack trigger.
  */
 export const AgentApplicationsRevisionsSlackManifestParams = /* @__PURE__ */ zod.object({
     application_id: zod.string(),
@@ -1404,30 +1551,30 @@ export const AgentApplicationsRevisionsSlackManifestParams = /* @__PURE__ */ zod
 
 /**
  * Revisions of an agent. Created in `draft`, promoted through
-`ready → live` once the bundle has been uploaded + frozen.
-
-URLs (nested under an application):
-
-    Model CRUD:
-        GET   .../revisions/                       list
-        POST  .../revisions/                       create draft
-        GET   .../revisions/<id>/                  retrieve
-        PATCH .../revisions/<id>/                  update spec (draft only)
-
-    Lifecycle:
-        POST  .../revisions/<id>/promote/          ready → live
-        POST  .../revisions/<id>/archive/          → archived
-        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
-        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
-        POST  .../revisions/new_draft/             create draft + clone_from atomically
-
-    Bundle authoring (proxied to the janitor):
-        GET    .../revisions/<id>/manifest/        list paths + sha256
-        GET    .../revisions/<id>/file/?path=…     read one file
-        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
-        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
-        GET    .../revisions/<id>/bundle/          bulk pull all files
-        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ * `ready → live` once the bundle has been uploaded + frozen.
+ *
+ * URLs (nested under an application):
+ *
+ *     Model CRUD:
+ *         GET   .../revisions/                       list
+ *         POST  .../revisions/                       create draft
+ *         GET   .../revisions/<id>/                  retrieve
+ *         PATCH .../revisions/<id>/                  update spec (draft only)
+ *
+ *     Lifecycle:
+ *         POST  .../revisions/<id>/promote/          ready → live
+ *         POST  .../revisions/<id>/archive/          → archived
+ *         POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+ *         POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+ *         POST  .../revisions/new_draft/             create draft + clone_from atomically
+ *
+ *     Bundle authoring (proxied to the janitor):
+ *         GET    .../revisions/<id>/manifest/        list paths + sha256
+ *         GET    .../revisions/<id>/file/?path=…     read one file
+ *         PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+ *         DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+ *         GET    .../revisions/<id>/bundle/          bulk pull all files
+ *         PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
  */
 export const AgentApplicationsRevisionsSpecUpdateParams = /* @__PURE__ */ zod.object({
     application_id: zod.string(),
@@ -1449,12 +1596,12 @@ export const AgentApplicationsRevisionsSpecUpdateBody = /* @__PURE__ */ zod
 
 /**
  * Return the fully-assembled system prompt for this revision.
-
-Authoring tools call this to preview what the model will actually
-see at session start — the platform framework preamble plus the
-bundle's `agent.md` plus the skills index. Useful for debugging
-author-vs-framework precedence conflicts and verifying
-`spec.framework_prompt.omit` overrides took effect.
+ *
+ * Authoring tools call this to preview what the model will actually
+ * see at session start — the platform framework preamble plus the
+ * bundle's `agent.md` plus the skills index. Useful for debugging
+ * author-vs-framework precedence conflicts and verifying
+ * `spec.framework_prompt.omit` overrides took effect.
  */
 export const AgentApplicationsRevisionsSystemPromptParams = /* @__PURE__ */ zod.object({
     application_id: zod.string(),
@@ -1468,30 +1615,30 @@ export const AgentApplicationsRevisionsSystemPromptParams = /* @__PURE__ */ zod.
 
 /**
  * Revisions of an agent. Created in `draft`, promoted through
-`ready → live` once the bundle has been uploaded + frozen.
-
-URLs (nested under an application):
-
-    Model CRUD:
-        GET   .../revisions/                       list
-        POST  .../revisions/                       create draft
-        GET   .../revisions/<id>/                  retrieve
-        PATCH .../revisions/<id>/                  update spec (draft only)
-
-    Lifecycle:
-        POST  .../revisions/<id>/promote/          ready → live
-        POST  .../revisions/<id>/archive/          → archived
-        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
-        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
-        POST  .../revisions/new_draft/             create draft + clone_from atomically
-
-    Bundle authoring (proxied to the janitor):
-        GET    .../revisions/<id>/manifest/        list paths + sha256
-        GET    .../revisions/<id>/file/?path=…     read one file
-        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
-        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
-        GET    .../revisions/<id>/bundle/          bulk pull all files
-        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ * `ready → live` once the bundle has been uploaded + frozen.
+ *
+ * URLs (nested under an application):
+ *
+ *     Model CRUD:
+ *         GET   .../revisions/                       list
+ *         POST  .../revisions/                       create draft
+ *         GET   .../revisions/<id>/                  retrieve
+ *         PATCH .../revisions/<id>/                  update spec (draft only)
+ *
+ *     Lifecycle:
+ *         POST  .../revisions/<id>/promote/          ready → live
+ *         POST  .../revisions/<id>/archive/          → archived
+ *         POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+ *         POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+ *         POST  .../revisions/new_draft/             create draft + clone_from atomically
+ *
+ *     Bundle authoring (proxied to the janitor):
+ *         GET    .../revisions/<id>/manifest/        list paths + sha256
+ *         GET    .../revisions/<id>/file/?path=…     read one file
+ *         PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+ *         DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+ *         GET    .../revisions/<id>/bundle/          bulk pull all files
+ *         PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
  */
 export const agentApplicationsRevisionsToolsUpdatePathToolIdRegExp = new RegExp('^[a-z0-9][a-z0-9_-]*$')
 
@@ -1516,30 +1663,30 @@ export const AgentApplicationsRevisionsToolsUpdateBody = /* @__PURE__ */ zod
 
 /**
  * Revisions of an agent. Created in `draft`, promoted through
-`ready → live` once the bundle has been uploaded + frozen.
-
-URLs (nested under an application):
-
-    Model CRUD:
-        GET   .../revisions/                       list
-        POST  .../revisions/                       create draft
-        GET   .../revisions/<id>/                  retrieve
-        PATCH .../revisions/<id>/                  update spec (draft only)
-
-    Lifecycle:
-        POST  .../revisions/<id>/promote/          ready → live
-        POST  .../revisions/<id>/archive/          → archived
-        POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
-        POST  .../revisions/<id>/clone_from/       copy bundle from another rev
-        POST  .../revisions/new_draft/             create draft + clone_from atomically
-
-    Bundle authoring (proxied to the janitor):
-        GET    .../revisions/<id>/manifest/        list paths + sha256
-        GET    .../revisions/<id>/file/?path=…     read one file
-        PUT    .../revisions/<id>/file/?path=…     write one file (draft)
-        DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
-        GET    .../revisions/<id>/bundle/          bulk pull all files
-        PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
+ * `ready → live` once the bundle has been uploaded + frozen.
+ *
+ * URLs (nested under an application):
+ *
+ *     Model CRUD:
+ *         GET   .../revisions/                       list
+ *         POST  .../revisions/                       create draft
+ *         GET   .../revisions/<id>/                  retrieve
+ *         PATCH .../revisions/<id>/                  update spec (draft only)
+ *
+ *     Lifecycle:
+ *         POST  .../revisions/<id>/promote/          ready → live
+ *         POST  .../revisions/<id>/archive/          → archived
+ *         POST  .../revisions/<id>/freeze/           draft → ready (stamps sha256)
+ *         POST  .../revisions/<id>/clone_from/       copy bundle from another rev
+ *         POST  .../revisions/new_draft/             create draft + clone_from atomically
+ *
+ *     Bundle authoring (proxied to the janitor):
+ *         GET    .../revisions/<id>/manifest/        list paths + sha256
+ *         GET    .../revisions/<id>/file/?path=…     read one file
+ *         PUT    .../revisions/<id>/file/?path=…     write one file (draft)
+ *         DELETE .../revisions/<id>/file/?path=…     delete one file (draft)
+ *         GET    .../revisions/<id>/bundle/          bulk pull all files
+ *         PUT    .../revisions/<id>/bundle/          bulk push (replace|merge)
  */
 export const agentApplicationsRevisionsToolsDestroyPathToolIdRegExp = new RegExp('^[a-z0-9][a-z0-9_-]*$')
 
@@ -1556,10 +1703,10 @@ export const AgentApplicationsRevisionsToolsDestroyParams = /* @__PURE__ */ zod.
 
 /**
  * Pre-flight checks before freeze + promote: entrypoint file exists,
-every native tool id is registered, every custom tool has its
-compiled.js + schema.json, every skill path exists, every declared
-secret has a value set in the application's env block. Returns
-`{ ok, errors: [...] }`. Works on any revision state.
+ * every native tool id is registered, every custom tool has its
+ * compiled.js + schema.json, every skill path exists, every declared
+ * secret has a value set in the application's env block. Returns
+ * `{ ok, errors: [...] }`. Works on any revision state.
  */
 export const AgentApplicationsRevisionsValidateCreateParams = /* @__PURE__ */ zod.object({
     application_id: zod.string(),
@@ -1573,8 +1720,8 @@ export const AgentApplicationsRevisionsValidateCreateParams = /* @__PURE__ */ zo
 
 /**
  * Create a fresh draft revision under `application_id` and seed it
-from `source_revision_id`. Saves the MCP one round-trip vs the
-explicit create + clone_from sequence.
+ * from `source_revision_id`. Saves the MCP one round-trip vs the
+ * explicit create + clone_from sequence.
  */
 export const AgentApplicationsRevisionsNewDraftCreateParams = /* @__PURE__ */ zod.object({
     application_id: zod.string(),
@@ -1596,18 +1743,18 @@ export const AgentApplicationsRevisionsNewDraftCreateBody = /* @__PURE__ */ zod
 
 /**
  * Agent applications — the deployable unit of the platform.
-
-URLs:
-    GET    /api/projects/<team>/agent_applications/             list
-    POST   /api/projects/<team>/agent_applications/             create
-    GET    /api/projects/<team>/agent_applications/<id|slug>/   retrieve
-    PATCH  /api/projects/<team>/agent_applications/<id|slug>/   update
-    DELETE /api/projects/<team>/agent_applications/<id|slug>/   archive
-    POST   /api/projects/<team>/agent_applications/<id|slug>/set_env/        bulk replace env
-    GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/        list set keys
-    GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  is one key set?
-    PUT    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  set one key
-    DELETE /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  clear one key
+ *
+ * URLs:
+ *     GET    /api/projects/<team>/agent_applications/             list
+ *     POST   /api/projects/<team>/agent_applications/             create
+ *     GET    /api/projects/<team>/agent_applications/<id|slug>/   retrieve
+ *     PATCH  /api/projects/<team>/agent_applications/<id|slug>/   update
+ *     DELETE /api/projects/<team>/agent_applications/<id|slug>/   archive
+ *     POST   /api/projects/<team>/agent_applications/<id|slug>/set_env/        bulk replace env
+ *     GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/        list set keys
+ *     GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  is one key set?
+ *     PUT    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  set one key
+ *     DELETE /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  clear one key
  */
 export const AgentApplicationsRetrieveParams = /* @__PURE__ */ zod.object({
     id: zod.string().describe('A UUID string identifying this agent application.'),
@@ -1620,18 +1767,18 @@ export const AgentApplicationsRetrieveParams = /* @__PURE__ */ zod.object({
 
 /**
  * Agent applications — the deployable unit of the platform.
-
-URLs:
-    GET    /api/projects/<team>/agent_applications/             list
-    POST   /api/projects/<team>/agent_applications/             create
-    GET    /api/projects/<team>/agent_applications/<id|slug>/   retrieve
-    PATCH  /api/projects/<team>/agent_applications/<id|slug>/   update
-    DELETE /api/projects/<team>/agent_applications/<id|slug>/   archive
-    POST   /api/projects/<team>/agent_applications/<id|slug>/set_env/        bulk replace env
-    GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/        list set keys
-    GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  is one key set?
-    PUT    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  set one key
-    DELETE /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  clear one key
+ *
+ * URLs:
+ *     GET    /api/projects/<team>/agent_applications/             list
+ *     POST   /api/projects/<team>/agent_applications/             create
+ *     GET    /api/projects/<team>/agent_applications/<id|slug>/   retrieve
+ *     PATCH  /api/projects/<team>/agent_applications/<id|slug>/   update
+ *     DELETE /api/projects/<team>/agent_applications/<id|slug>/   archive
+ *     POST   /api/projects/<team>/agent_applications/<id|slug>/set_env/        bulk replace env
+ *     GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/        list set keys
+ *     GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  is one key set?
+ *     PUT    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  set one key
+ *     DELETE /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  clear one key
  */
 export const AgentApplicationsPartialUpdateParams = /* @__PURE__ */ zod.object({
     id: zod.string().describe('A UUID string identifying this agent application.'),
@@ -1646,27 +1793,33 @@ export const agentApplicationsPartialUpdateBodyNameMax = 255
 
 export const agentApplicationsPartialUpdateBodySlugMax = 63
 
+export const agentApplicationsPartialUpdateBodySlugRegExp = new RegExp('^[-a-zA-Z0-9_]+$')
+
 export const AgentApplicationsPartialUpdateBody = /* @__PURE__ */ zod.object({
     name: zod.string().max(agentApplicationsPartialUpdateBodyNameMax).optional(),
-    slug: zod.string().max(agentApplicationsPartialUpdateBodySlugMax).optional(),
+    slug: zod
+        .string()
+        .max(agentApplicationsPartialUpdateBodySlugMax)
+        .regex(agentApplicationsPartialUpdateBodySlugRegExp)
+        .optional(),
     description: zod.string().optional(),
     archived: zod.boolean().optional(),
 })
 
 /**
  * Agent applications — the deployable unit of the platform.
-
-URLs:
-    GET    /api/projects/<team>/agent_applications/             list
-    POST   /api/projects/<team>/agent_applications/             create
-    GET    /api/projects/<team>/agent_applications/<id|slug>/   retrieve
-    PATCH  /api/projects/<team>/agent_applications/<id|slug>/   update
-    DELETE /api/projects/<team>/agent_applications/<id|slug>/   archive
-    POST   /api/projects/<team>/agent_applications/<id|slug>/set_env/        bulk replace env
-    GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/        list set keys
-    GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  is one key set?
-    PUT    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  set one key
-    DELETE /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  clear one key
+ *
+ * URLs:
+ *     GET    /api/projects/<team>/agent_applications/             list
+ *     POST   /api/projects/<team>/agent_applications/             create
+ *     GET    /api/projects/<team>/agent_applications/<id|slug>/   retrieve
+ *     PATCH  /api/projects/<team>/agent_applications/<id|slug>/   update
+ *     DELETE /api/projects/<team>/agent_applications/<id|slug>/   archive
+ *     POST   /api/projects/<team>/agent_applications/<id|slug>/set_env/        bulk replace env
+ *     GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/        list set keys
+ *     GET    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  is one key set?
+ *     PUT    /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  set one key
+ *     DELETE /api/projects/<team>/agent_applications/<id|slug>/env_keys/<KEY>/  clear one key
  */
 export const AgentApplicationsDestroyParams = /* @__PURE__ */ zod.object({
     id: zod.string().describe('A UUID string identifying this agent application.'),
@@ -1679,10 +1832,10 @@ export const AgentApplicationsDestroyParams = /* @__PURE__ */ zod.object({
 
 /**
  * List the names of secrets currently set on the application.
-
-Returns names only — values stay server-side under
-`EncryptedTextField`. Use this to drive the "set / unset" badge
-next to a declared secret in the editor UI.
+ *
+ * Returns names only — values stay server-side under
+ * `EncryptedTextField`. Use this to drive the "set / unset" badge
+ * next to a declared secret in the editor UI.
  */
 export const AgentApplicationsEnvKeysListParams = /* @__PURE__ */ zod.object({
     id: zod.string().describe('A UUID string identifying this agent application.'),
@@ -1695,14 +1848,14 @@ export const AgentApplicationsEnvKeysListParams = /* @__PURE__ */ zod.object({
 
 /**
  * GET / PUT / DELETE one secret by name.
-
-- `GET`    → `{ key, is_set }` (never returns the value).
-- `PUT`    → upserts `{ value }` into the env block.
-- `DELETE` → removes the key. No-op when it wasn't set.
-
-Per-method scope: GET is treated as a write action so the
-single action name maps to one consistent scope; reading whether
-a secret is set is restricted to writers in any case.
+ *
+ * - `GET`    → `{ key, is_set }` (never returns the value).
+ * - `PUT`    → upserts `{ value }` into the env block.
+ * - `DELETE` → removes the key. No-op when it wasn't set.
+ *
+ * Per-method scope: GET is treated as a write action so the
+ * single action name maps to one consistent scope; reading whether
+ * a secret is set is restricted to writers in any case.
  */
 export const AgentApplicationsEnvKeysGetParams = /* @__PURE__ */ zod.object({
     id: zod.string().describe('A UUID string identifying this agent application.'),
@@ -1718,14 +1871,14 @@ export const AgentApplicationsEnvKeysGetParams = /* @__PURE__ */ zod.object({
 
 /**
  * GET / PUT / DELETE one secret by name.
-
-- `GET`    → `{ key, is_set }` (never returns the value).
-- `PUT`    → upserts `{ value }` into the env block.
-- `DELETE` → removes the key. No-op when it wasn't set.
-
-Per-method scope: GET is treated as a write action so the
-single action name maps to one consistent scope; reading whether
-a secret is set is restricted to writers in any case.
+ *
+ * - `GET`    → `{ key, is_set }` (never returns the value).
+ * - `PUT`    → upserts `{ value }` into the env block.
+ * - `DELETE` → removes the key. No-op when it wasn't set.
+ *
+ * Per-method scope: GET is treated as a write action so the
+ * single action name maps to one consistent scope; reading whether
+ * a secret is set is restricted to writers in any case.
  */
 export const AgentApplicationsEnvKeysClearParams = /* @__PURE__ */ zod.object({
     id: zod.string().describe('A UUID string identifying this agent application.'),
@@ -1741,14 +1894,14 @@ export const AgentApplicationsEnvKeysClearParams = /* @__PURE__ */ zod.object({
 
 /**
  * Authoring-side proxy for invoking a *draft* (or any non-live) revision.
-
-Closes the anonymous-draft-invoke gap: the public ingress URL refuses
-non-live invokes that don't carry the `x-agent-preview-secret` header;
-this proxy attaches it after authenticating the Django caller. See
-docs/agent-platform/plans/draft-preview-auth.md.
-
-URL: `/api/projects/<team>/agent_applications/<app>/preview-proxy/<rest>`
-Auth: standard PAT / session — `agents:read` scope.
+ *
+ * Closes the anonymous-draft-invoke gap: the public ingress URL refuses
+ * non-live invokes that don't carry the `x-agent-preview-secret` header;
+ * this proxy attaches it after authenticating the Django caller. See
+ * docs/agent-platform/plans/draft-preview-auth.md.
+ *
+ * URL: `/api/projects/<team>/agent_applications/<app>/preview-proxy/<rest>`
+ * Auth: standard PAT / session — `agents:read` scope.
  */
 export const AgentApplicationsPreviewProxyParams = /* @__PURE__ */ zod.object({
     id: zod.string().describe('A UUID string identifying this agent application.'),
@@ -1786,10 +1939,10 @@ export const AgentApplicationsPreviewProxyBody = /* @__PURE__ */ zod
 
 /**
  * List sessions for this application, newest first. Strips the
-conversation transcript from each summary, but includes a `preview`
-(last assistant text, ~120 chars) and `usage_total` (token + cost
-aggregate). Use `agent-applications-sessions-retrieve` for the full
-transcript of a single session.
+ * conversation transcript from each summary, but includes a `preview`
+ * (last assistant text, ~120 chars) and `usage_total` (token + cost
+ * aggregate). Use `agent-applications-sessions-retrieve` for the full
+ * transcript of a single session.
  */
 export const AgentApplicationsSessionsListParams = /* @__PURE__ */ zod.object({
     id: zod.string().describe('A UUID string identifying this agent application.'),
@@ -1822,9 +1975,9 @@ export const AgentApplicationsSessionsListQueryParams = /* @__PURE__ */ zod.obje
 
 /**
  * Fetch one session's state — full conversation by default, or just
-the trailing N messages with `?last_n=`. Always returns a
-`usage_total` block aggregated over the entire session, regardless of
-trim. The runner-side queue DB is the source of truth.
+ * the trailing N messages with `?last_n=`. Always returns a
+ * `usage_total` block aggregated over the entire session, regardless of
+ * trim. The runner-side queue DB is the source of truth.
  */
 export const AgentApplicationsSessionsRetrieveParams = /* @__PURE__ */ zod.object({
     id: zod.string().describe('A UUID string identifying this agent application.'),
@@ -1844,31 +1997,6 @@ export const AgentApplicationsSessionsRetrieveQueryParams = /* @__PURE__ */ zod.
             'If set, return only the most recent N messages from the conversation. `usage_total` is still computed over the full session — only the transcript is trimmed. The response includes `conversation_trimmed: true` and `conversation_total_turns` so the caller knows how much was hidden.'
         ),
 })
-
-/**
- * Replace the agent's encrypted env block.
-
-The body is `{ "env": { "<KEY>": "<value>", ... } }`. The encrypted
-text gets stored on AgentApplication.encrypted_env; the worker
-decrypts it at session start via the same Fernet schedule (see
-agent-shared/src/runtime/encryption.ts).
- */
-export const AgentApplicationsSetEnvCreateParams = /* @__PURE__ */ zod.object({
-    id: zod.string().describe('A UUID string identifying this agent application.'),
-    project_id: zod
-        .string()
-        .describe(
-            "Project ID of the project you're trying to access. To find the ID of the project, make a call to /api/projects/."
-        ),
-})
-
-export const AgentApplicationsSetEnvCreateBody = /* @__PURE__ */ zod
-    .object({
-        env: zod.record(zod.string(), zod.string()),
-    })
-    .describe(
-        'Body shape for AgentApplicationViewSet.set_env.\n\n`env` is a JSON object of string→string. The view encrypts it via the\nsame Fernet schedule the worker uses to decrypt.'
-    )
 
 /**
  * Read-only catalog of every @posthog/* native tool the runner knows.

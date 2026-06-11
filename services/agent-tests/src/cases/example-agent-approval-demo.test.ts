@@ -33,9 +33,10 @@ async function loadBundle(): Promise<{ spec: Record<string, unknown>; files: Rec
     const spec = JSON.parse(await readFile(join(BUNDLE_ROOT, 'spec.json'), 'utf-8')) as Record<string, unknown>
     const files: Record<string, string> = {}
     files['agent.md'] = await readFile(join(BUNDLE_ROOT, 'agent.md'), 'utf-8')
-    const skillFiles = await readdir(join(BUNDLE_ROOT, 'skills'))
-    for (const sf of skillFiles) {
-        files[`skills/${sf}`] = await readFile(join(BUNDLE_ROOT, 'skills', sf), 'utf-8')
+    const skillDirs = await readdir(join(BUNDLE_ROOT, 'skills'))
+    for (const id of skillDirs) {
+        const p = `skills/${id}/SKILL.md`
+        files[p] = await readFile(join(BUNDLE_ROOT, p), 'utf-8')
     }
     return { spec, files }
 }
@@ -170,7 +171,7 @@ describe('example: agent-approval-demo bundle', () => {
         // The model received the synthetic queued envelope, not the real result.
         const queuedEnvelope = findApprovalPayload(session!.conversation, 'queued')
         expect(queuedEnvelope).not.toBeNull()
-        expect(queuedEnvelope!.approval_url).toMatch(/\/approvals\//)
+        expect(queuedEnvelope!.approval_url).toMatch(/\/approvals\?request=/)
 
         // The approval row is queryable via janitor — same surface the Django
         // proxy hits, same surface the agent-console talks to.

@@ -22,7 +22,7 @@ import {
     SessionQueue,
     SLACK_BOT_TOKEN_KEY,
     SLACK_SIGNING_SECRET_KEY,
-    SlackSigningSecretResolver,
+    SecretResolver,
 } from '@posthog/agent-shared'
 
 const log = createLogger('slack-trigger')
@@ -40,7 +40,7 @@ export interface SlackTriggerDeps {
     resolver: RevisionResolver
     queue: SessionQueue
     teamId: number
-    signingSecretResolver: SlackSigningSecretResolver
+    signingSecretResolver: SecretResolver
     /** Optional identity store — when present, slack events resolve to a stable AgentUser. */
     identities?: IdentityStore
     /**
@@ -138,6 +138,13 @@ export function slackRouter(deps: SlackTriggerDeps): Router {
             const trusted = slackConfig.trusted_workspaces
             const workspaceId = event.team ?? 'unknown'
             if (trusted !== '*' && (!Array.isArray(trusted) || !trusted.includes(workspaceId))) {
+                // The rejected workspace id is otherwise only in the 403 body —
+                // surface it (plus the configured allowlist) so "why is Slack
+                // getting a 403?" is answerable from the logs alone.
+                log.warn(
+                    { slug: resolved.application.slug, workspace: workspaceId, trusted_workspaces: trusted ?? null },
+                    'slack_event_rejected_workspace_not_trusted'
+                )
                 res.status(403).json({ error: 'workspace_not_trusted', workspace: workspaceId })
                 return
             }

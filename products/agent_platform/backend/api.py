@@ -19,6 +19,7 @@ janitor_client.py for the wire protocol.
 from __future__ import annotations
 
 import os
+import re
 import json
 import logging
 from collections.abc import AsyncIterator, Callable
@@ -85,6 +86,7 @@ from .serializers import (
     WriteSpecRequestSerializer,
     WriteToolRequestSerializer,
     WriteTypedBundleRequestSerializer,
+    agent_ingress_route_url,
 )
 from .spec_schema import missing_required_secrets
 
@@ -212,11 +214,8 @@ _TRIGGER_ROUTES: dict[str, dict[str, str]] = {
 def _build_preview_endpoints(ingress_slug: str, spec: dict[str, Any]) -> dict[str, dict[str, str]]:
     """Return `{trigger_type: {route_name: absolute_url}}` for every
     trigger the spec declares that has a public ingress route in
-    `_TRIGGER_ROUTES`. Empty when `AGENT_INGRESS_PUBLIC_URL` isn't
-    set (local dev without `bin/agent-tunnel`)."""
-    base = (settings.AGENT_INGRESS_PUBLIC_URL or "").rstrip("/")
-    if not base:
-        return {}
+    `_TRIGGER_ROUTES`. Empty when no public agent-ingress URL is configured
+    for the active routing mode (local dev without `bin/agent-tunnel`)."""
     triggers = spec.get("triggers") or []
     if not isinstance(triggers, list):
         return {}
@@ -234,35 +233,43 @@ def _build_preview_endpoints(ingress_slug: str, spec: dict[str, Any]) -> dict[st
         # should already enforce uniqueness, but be defensive.
         if ttype in out:
             continue
-        out[ttype] = {name: f"{base}/agents/{ingress_slug}{path}" for name, path in routes.items()}
+        urls = {name: agent_ingress_route_url(ingress_slug, path) for name, path in routes.items()}
+        if any(url is None for url in urls.values()):
+            return {}
+        out[ttype] = {name: url for name, url in urls.items() if url is not None}
     return out
 
 
 def _build_preview_auth_info(spec: dict[str, Any]) -> dict[str, Any]:
     """Surface the auth contract the caller has to satisfy when hitting
-    the endpoints above. The preview-token gate is separate from
-    `spec.auth.modes` — the caller almost always needs both."""
-    auth = spec.get("auth")
-    spec_modes: list[str] = []
-    if isinstance(auth, dict):
-        modes = auth.get("modes")
-        if isinstance(modes, list):
-            for mode in modes:
-                if isinstance(mode, dict):
-                    mtype = mode.get("type")
-                    if isinstance(mtype, str):
-                        spec_modes.append(mtype)
+    the endpoints above. Auth is per-trigger now, so report the accepted
+    modes keyed by trigger type. The preview-token gate is separate — the
+    caller almost always needs both."""
+    trigger_modes: dict[str, list[str]] = {}
+    triggers = spec.get("triggers") or []
+    if isinstance(triggers, list):
+        for trigger in triggers:
+            if not isinstance(trigger, dict):
+                continue
+            ttype = trigger.get("type")
+            auth = trigger.get("auth")
+            if not isinstance(ttype, str) or not isinstance(auth, dict):
+                continue
+            modes = auth.get("modes")
+            if not isinstance(modes, list):
+                continue
+            trigger_modes[ttype] = [m["type"] for m in modes if isinstance(m, dict) and isinstance(m.get("type"), str)]
     return {
         "preview_token_header": "x-agent-preview-token",
         "preview_token_query": "preview_token",
-        "spec_modes": spec_modes,
+        "trigger_modes": trigger_modes,
         "notes": (
             "The preview-token in `token` gates revision routing only (it admits non-live "
-            "revisions). The ingress then ALSO enforces the agent's spec.auth.modes for the "
-            "trigger you're hitting — pick one of `spec_modes` and attach the matching "
-            "credential (Authorization: Bearer for oauth/pat, x-posthog-internal for "
-            "posthog_internal, etc.). Public-auth agents accept anonymous; everything else "
-            "needs a real credential alongside the preview-token."
+            "revisions). The ingress then ALSO enforces the auth modes declared on the trigger "
+            "you're hitting — look up the trigger in `trigger_modes`, pick one of its modes, and "
+            "attach the matching credential (Authorization: Bearer for posthog, x-posthog-internal "
+            "for posthog_internal, the named header for shared_secret). Public-auth triggers accept "
+            "anonymous; everything else needs a real credential alongside the preview-token."
         ),
     }
 
@@ -271,8 +278,8 @@ def _build_preview_proxy_info(request: Request, application: AgentApplication) -
     """Same-origin Django-side proxy. Convenient for browser SSE flows
     where attaching preview-tokens to EventSource is awkward; not a
     full replacement for the direct path because the proxy strips
-    caller Authorization (so it can't satisfy `spec_modes` for
-    non-public agents)."""
+    caller Authorization (so it can't satisfy a trigger's non-public
+    auth modes)."""
     team_id = application.team_id
     proxy_base = (
         f"{request.scheme}://{request.get_host()}"
@@ -284,9 +291,9 @@ def _build_preview_proxy_info(request: Request, application: AgentApplication) -
         "notes": (
             "Server-side proxy that mints the preview-token for you and forwards to ingress. "
             "Strips caller Authorization / Cookie before forwarding, so it works for agents "
-            "whose `spec.auth.modes` accepts anonymous (public). Agents with required auth "
-            "(`oauth` / `pat` / `posthog_internal`) need the direct endpoints above with a "
-            "real credential attached."
+            "whose hit trigger accepts anonymous (public) auth. Triggers with required auth "
+            "(`posthog` / `posthog_internal` / `shared_secret`) need the direct endpoints "
+            "above with a real credential attached."
         ),
     }
 
@@ -773,6 +780,12 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         # proxies via the path form using the full UUID hex (32 chars) so the
         # ingress prefix lookup is unambiguous. See revision-routing.md.
         rev_hex = revision.id.hex
+        # Defence-in-depth: the slug is interpolated into the upstream URL path,
+        # so reject anything that isn't a strict lowercase slug before building
+        # it — guards against a slug that reached the DB without the model /
+        # serializer validators (e.g. a raw node-side write).
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,61}[a-z0-9]?", application.slug):
+            raise ValidationError("Application slug contains unsafe characters")
         forwarded_query = {k: v for k, v in request.query_params.items() if k != "revision_id"}
         query_string = f"?{urlencode(forwarded_query)}" if forwarded_query else ""
         upstream_url = f"{ingress_base}/agents/{application.slug}-{rev_hex}/{rest}{query_string}"
@@ -887,13 +900,13 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
                         help_text="Token TTL in seconds from issue. Clients should refresh before this elapses.",
                     ),
                     "ingress_slug": drf_serializers.CharField(
-                        help_text="Slug to use in the ingress URL — `<application_slug>-<revision_uuid_hex>`. Identifies the exact revision in the path-routing prefix.",
+                        help_text="Slug to use in the ingress URL — `<application_slug>-<revision_uuid_hex>`. Identifies the exact revision, placed in the host (domain mode) or path (path mode) routing prefix.",
                     ),
                     "endpoints": drf_serializers.JSONField(
-                        help_text="Per-trigger ingress URLs the caller can hit directly, derived from the revision's `spec.triggers[]`. Shape: `{<trigger_type>: {<route_name>: <absolute_url>}}`. Only includes triggers the spec actually declares. Empty when `AGENT_INGRESS_PUBLIC_URL` is unset.",
+                        help_text="Per-trigger ingress URLs the caller can hit directly, derived from the revision's `spec.triggers[]`. Shape: `{<trigger_type>: {<route_name>: <absolute_url>}}`. Only includes triggers the spec actually declares. Empty when no public agent-ingress URL is configured for the active routing mode.",
                     ),
                     "auth": drf_serializers.JSONField(
-                        help_text="How to attach credentials to those endpoints: preview-token header/query names, the agent's `spec.auth.modes`, and a note about the live vs preview-mode gate split. Lets the caller wire auth without grepping the ingress source.",
+                        help_text="How to attach credentials to those endpoints: preview-token header/query names, the per-trigger accepted auth modes (`trigger_modes`), and a note about the live vs preview-mode gate split. Lets the caller wire auth without grepping the ingress source.",
                     ),
                     "preview_proxy": drf_serializers.JSONField(
                         help_text="Server-side alternative — `/api/projects/<team>/agent_applications/<slug>/preview-proxy/<path>` mints the JWT for you. Strips caller Authorization, so it works for public-auth agents; agents with required auth need the direct endpoints above.",
@@ -1476,7 +1489,9 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
             payload = _janitor().decide_approval(
                 approval_id,
                 decision=body.validated_data["decision"],
-                decided_by=str(request.user.pk) if request.user and request.user.is_authenticated else "",
+                # decision_by is a UUID column — send the user's uuid, not the
+                # integer pk (which fails as "invalid input syntax for type uuid").
+                decided_by=str(request.user.uuid) if request.user and request.user.is_authenticated else "",
                 edited_args=body.validated_data.get("edited_args"),
                 reason=body.validated_data.get("reason"),
             )
@@ -1542,6 +1557,7 @@ class AgentRevisionViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         "list",
         "retrieve",
         "manifest",
+        "slack_manifest",
         "get_bundle",
         "validate",
         "system_prompt",
@@ -1738,10 +1754,9 @@ class AgentRevisionViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         has no slack trigger.
         """
         revision: AgentRevision = self.get_object()
-        base = (settings.AGENT_INGRESS_PUBLIC_URL or "").rstrip("/")
         slug = revision.application.slug
-        events_url = f"{base}/agents/{slug}/slack/events" if base and slug else None
-        interactivity_url = f"{base}/agents/{slug}/slack/interactivity" if base and slug else None
+        events_url = agent_ingress_route_url(slug, "/slack/events")
+        interactivity_url = agent_ingress_route_url(slug, "/slack/interactivity")
         result = self._call(
             _janitor().slack_manifest,
             str(revision.id),
@@ -2011,6 +2026,12 @@ class AgentRevisionViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         moved off the janitor side as part of the same fix.
         """
         revision: AgentRevision = self.get_object()
+        # Only a draft can be frozen. Without this guard a freeze against an
+        # archived/live revision would overwrite its state to "ready" — leaving
+        # `application.live_revision` pointing at a now-"ready" row, which the
+        # promote path doesn't expect. Mirrors the `update()` non-draft guard.
+        if revision.state != "draft":
+            raise ValidationError(f"Cannot freeze a {revision.state} revision; only 'draft' can be frozen.")
         janitor_client = _janitor()
         # Skill / custom-tool template pinning (freeze_templates_into_bundle) is
         # disabled pending a registry rethink — see the commented-out template
@@ -2270,42 +2291,6 @@ class AgentMemoryViewSet(TeamAndOrgViewSetMixin, viewsets.ViewSet):
         self.check_object_permissions(self.request, app)
         return app
 
-    def _log_memory_change(
-        self, application: AgentApplication, activity: str, path: str, extra: dict[str, Any]
-    ) -> None:
-        # Local import — activity_log isn't on the hot path and avoids a top-level
-        # circular import with posthog.models in some test paths.
-        import dataclasses  # noqa: PLC0415
-
-        from posthog.models.activity_logging.activity_log import (  # noqa: PLC0415
-            ActivityContextBase,
-            Detail,
-            log_activity,
-        )
-
-        @dataclasses.dataclass(frozen=True)
-        class AgentMemoryContext(ActivityContextBase):
-            memory_path: str = ""
-            extra: dict[str, Any] = dataclasses.field(default_factory=dict)
-
-        log_activity(
-            organization_id=self.organization_id,
-            team_id=application.team_id,
-            user=cast(User, self.request.user),
-            was_impersonated=getattr(self.request, "user_is_impersonated", False),
-            item_id=application.id,
-            scope="AgentApplication",
-            activity=activity,
-            detail=Detail(
-                name=application.slug,
-                short_id=None,
-                changes=None,
-                trigger=None,
-                type=None,
-                context=AgentMemoryContext(memory_path=path, extra=extra),
-            ),
-        )
-
     # ── list / tree ────────────────────────────────────────────────────────
 
     @extend_schema(
@@ -2453,12 +2438,6 @@ class AgentMemoryViewSet(TeamAndOrgViewSetMixin, viewsets.ViewSet):
             )
         except JanitorClientError as e:
             raise JanitorUpstreamError(e) from e
-        self._log_memory_change(
-            application,
-            activity="memory_file_created",
-            path=body["path"],
-            extra={"description": body["description"], "tags": body.get("tags") or []},
-        )
         return Response(payload, status=status.HTTP_201_CREATED)
 
     @extend_schema(
@@ -2497,12 +2476,6 @@ class AgentMemoryViewSet(TeamAndOrgViewSetMixin, viewsets.ViewSet):
             )
         except JanitorClientError as e:
             raise JanitorUpstreamError(e) from e
-        self._log_memory_change(
-            application,
-            activity="memory_file_updated",
-            path=path,
-            extra=dict(body.items()),
-        )
         return Response(payload)
 
     @extend_schema(
@@ -2539,7 +2512,6 @@ class AgentMemoryViewSet(TeamAndOrgViewSetMixin, viewsets.ViewSet):
             payload = _janitor().delete_memory_file(int(self.team_id), str(application.id), path)
         except JanitorClientError as e:
             raise JanitorUpstreamError(e) from e
-        self._log_memory_change(application, activity="memory_file_deleted", path=path, extra={})
         return Response(payload)
 
     # ── search ─────────────────────────────────────────────────────────────

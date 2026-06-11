@@ -11,7 +11,6 @@ import {
     AgentApplicationsListQueryParams,
     AgentApplicationsPartialUpdateBody,
     AgentApplicationsPartialUpdateParams,
-    AgentApplicationsPreviewProxyBody,
     AgentApplicationsPreviewProxyParams,
     AgentApplicationsPreviewProxyQueryParams,
     AgentApplicationsRetrieveParams,
@@ -52,8 +51,6 @@ import {
     AgentApplicationsSessionsListQueryParams,
     AgentApplicationsSessionsRetrieveParams,
     AgentApplicationsSessionsRetrieveQueryParams,
-    AgentApplicationsSetEnvCreateBody,
-    AgentApplicationsSetEnvCreateParams,
 } from '@/generated/agent_platform/api'
 import type { Context, ToolBase, ZodObjectAny } from '@/tools/types'
 
@@ -208,26 +205,21 @@ const agentApplicationsPartialUpdate = (): ToolBase<
     },
 })
 
-const AgentApplicationsPreviewProxySchema = AgentApplicationsPreviewProxyParams.omit({ project_id: true })
-    .extend(AgentApplicationsPreviewProxyQueryParams.omit({ format: true }).shape)
-    .extend(AgentApplicationsPreviewProxyBody.shape)
+const AgentApplicationsPreviewProxySchema = AgentApplicationsPreviewProxyParams.omit({ project_id: true }).extend(
+    AgentApplicationsPreviewProxyQueryParams.omit({ format: true }).shape
+)
 
-const agentApplicationsPreviewProxy = (): ToolBase<typeof AgentApplicationsPreviewProxySchema, unknown> => ({
+const agentApplicationsPreviewProxy = (): ToolBase<
+    typeof AgentApplicationsPreviewProxySchema,
+    Schemas.AgentApplication
+> => ({
     name: 'agent-applications-preview-proxy',
     schema: AgentApplicationsPreviewProxySchema,
     handler: async (context: Context, params: z.infer<typeof AgentApplicationsPreviewProxySchema>) => {
         const projectId = await context.stateManager.getProjectId()
-        const body: Record<string, unknown> = {}
-        if (params.message !== undefined) {
-            body['message'] = params.message
-        }
-        if (params.session_id !== undefined) {
-            body['session_id'] = params.session_id
-        }
-        const result = await context.api.request<unknown>({
+        const result = await context.api.request<Schemas.AgentApplication>({
             method: 'POST',
             path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_applications/${encodeURIComponent(String(params.id))}/preview-proxy/${encodeURIComponent(String(params.rest))}/`,
-            body,
             query: {
                 revision_id: params.revision_id,
             },
@@ -634,9 +626,6 @@ const agentApplicationsRevisionsSkillsUpdate = (): ToolBase<
         if (params.body !== undefined) {
             body['body'] = params.body
         }
-        if (params.files !== undefined) {
-            body['files'] = params.files
-        }
         const result = await context.api.request<Schemas.AgentRevision>({
             method: 'PUT',
             path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_applications/${encodeURIComponent(String(params.application_id))}/revisions/${encodeURIComponent(String(params.id))}/skills/${encodeURIComponent(String(params.skill_id))}/`,
@@ -833,31 +822,6 @@ const agentApplicationsSessionsRetrieve = (): ToolBase<
     },
 })
 
-const AgentApplicationsSetEnvCreateSchema = AgentApplicationsSetEnvCreateParams.omit({ project_id: true }).extend(
-    AgentApplicationsSetEnvCreateBody.shape
-)
-
-const agentApplicationsSetEnvCreate = (): ToolBase<
-    typeof AgentApplicationsSetEnvCreateSchema,
-    Schemas.AgentApplication
-> => ({
-    name: 'agent-applications-set-env-create',
-    schema: AgentApplicationsSetEnvCreateSchema,
-    handler: async (context: Context, params: z.infer<typeof AgentApplicationsSetEnvCreateSchema>) => {
-        const projectId = await context.stateManager.getProjectId()
-        const body: Record<string, unknown> = {}
-        if (params.env !== undefined) {
-            body['env'] = params.env
-        }
-        const result = await context.api.request<Schemas.AgentApplication>({
-            method: 'POST',
-            path: `/api/projects/${encodeURIComponent(String(projectId))}/agent_applications/${encodeURIComponent(String(params.id))}/set_env/`,
-            body,
-        })
-        return result
-    },
-})
-
 const AgentNativeToolsListSchema = z.object({})
 
 const agentNativeToolsList = (): ToolBase<
@@ -911,6 +875,5 @@ export const GENERATED_TOOLS: Record<string, () => ToolBase<ZodObjectAny>> = {
     'agent-applications-revisions-validate-create': agentApplicationsRevisionsValidateCreate,
     'agent-applications-sessions-list': agentApplicationsSessionsList,
     'agent-applications-sessions-retrieve': agentApplicationsSessionsRetrieve,
-    'agent-applications-set-env-create': agentApplicationsSetEnvCreate,
     'agent-native-tools-list': agentNativeToolsList,
 }

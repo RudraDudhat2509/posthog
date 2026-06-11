@@ -43,17 +43,20 @@ async function seedApp(store: PgRevisionStore, slug: string): Promise<{ app: Age
         bundle_uri: 's3://x/',
         spec: AgentSpecSchema.parse({
             model: 'x',
+            // These tests exercise the routing surface, not auth — keep the
+            // "open agent" behaviour so request flows succeed without a verifier.
+            // Public exposure is opt-in (see AuthModeSchema) so each declarative
+            // trigger sets it explicitly; slack is intrinsic (no modes).
             triggers: [
-                { type: 'chat', config: { require_auth: false } },
+                { type: 'chat', config: {}, auth: { modes: [{ type: 'public', acknowledge_public_exposure: true }] } },
                 { type: 'slack', config: { trusted_workspaces: '*' } },
-                { type: 'webhook', config: { path: '/webhook' } },
-                { type: 'mcp', config: {} },
+                {
+                    type: 'webhook',
+                    config: { path: '/webhook' },
+                    auth: { modes: [{ type: 'public', acknowledge_public_exposure: true }] },
+                },
+                { type: 'mcp', config: {}, auth: { modes: [{ type: 'public', acknowledge_public_exposure: true }] } },
             ],
-            // These tests exercise the routing surface, not auth — keep
-            // the legacy "open agent" behaviour so request flows still
-            // succeed without a verifier. Public exposure is now opt-in
-            // (see AuthModeSchema) so we set it explicitly.
-            auth: { modes: [{ type: 'public', acknowledge_public_exposure: true }] },
         }),
     })
     await store.setRevisionState(rev.id, 'live')
@@ -83,7 +86,7 @@ describe('ingress HTTP server (path mode)', () => {
         await pool.end()
     })
 
-    function mk(): {
+    function mk(routing?: { routingMode: 'domain' | 'path'; domainSuffix?: string }): {
         revisions: PgRevisionStore
         queue: PgSessionQueue
         bus: RedisSessionEventBus
@@ -100,7 +103,8 @@ describe('ingress HTTP server (path mode)', () => {
             bus,
             credentialBroker,
             teamId: 1,
-            routingMode: 'path',
+            routingMode: routing?.routingMode ?? 'path',
+            domainSuffix: routing?.domainSuffix,
             pathPrefix: '/agents',
             // Returns the test secret for every `(secretRef, application)`
             // lookup. Models the "PostHog runs one Slack app for everything"
@@ -519,8 +523,7 @@ describe('ingress HTTP server (path mode)', () => {
             bundle_uri: 's3://x/',
             spec: AgentSpecSchema.parse({
                 model: 'x',
-                triggers: [{ type: 'mcp', config: {} }],
-                auth: { modes: [{ type: 'pat' }] },
+                triggers: [{ type: 'mcp', config: {}, auth: { modes: [{ type: 'posthog' }] } }],
             }),
         })
         await store.setRevisionState(rev.id, 'live')
@@ -550,6 +553,17 @@ describe('ingress HTTP server (path mode)', () => {
         expect(res.body.snippets.mcp_json.mcpServers['public-agent'].headers).toBeUndefined()
     })
 
+    it('GET /mcp/connect-info uses the domain-mode URL (slug in host, no /agents prefix)', async () => {
+        // Domain mode: the agent is reachable at <slug><suffix>, routes at root.
+        // The connect URL must mirror that, not the path-mode /agents/<slug>/mcp.
+        const { revisions, app } = mk({ routingMode: 'domain', domainSuffix: '.agents.test' })
+        await seedApp(revisions, 'dom-agent')
+        const res = await request(app).get('/mcp/connect-info').set('Host', 'dom-agent.agents.test')
+        expect(res.status).toBe(200)
+        expect(res.body.url).toBe('https://dom-agent.agents.test/mcp')
+        expect(res.body.snippets.mcp_json.mcpServers['dom-agent'].url).toBe('https://dom-agent.agents.test/mcp')
+    })
+
     it('GET /mcp/connect-info renders Bearer placeholder for a PAT-gated agent', async () => {
         const { revisions, app } = mk()
         const store = revisions
@@ -566,20 +580,19 @@ describe('ingress HTTP server (path mode)', () => {
             bundle_uri: 's3://x/',
             spec: AgentSpecSchema.parse({
                 model: 'x',
-                triggers: [{ type: 'mcp', config: {} }],
-                auth: { modes: [{ type: 'pat' }] },
+                triggers: [{ type: 'mcp', config: {}, auth: { modes: [{ type: 'posthog' }] } }],
             }),
         })
         await store.setRevisionState(rev.id, 'live')
         await store.setLiveRevision(agentApp.id, rev.id)
         const res = await request(app).get('/agents/pat-gated/mcp/connect-info')
-        expect(res.body.auth.mode).toBe('pat')
+        expect(res.body.auth.mode).toBe('posthog')
         expect(res.body.auth.header).toBe('Authorization')
         // Placeholder only — never a real secret.
         expect(res.body.snippets.mcp_json.mcpServers['pat-gated'].headers.Authorization).toBe(
-            'Bearer <YOUR_POSTHOG_PAT>'
+            'Bearer <YOUR_POSTHOG_API_KEY>'
         )
-        expect(res.body.snippets.claude_code_command).toContain('Authorization=Bearer <YOUR_POSTHOG_PAT>')
+        expect(res.body.snippets.claude_code_command).toContain('Authorization=Bearer <YOUR_POSTHOG_API_KEY>')
     })
 
     it('GET /mcp/connect-info 404s when the agent has no mcp trigger', async () => {
@@ -598,7 +611,13 @@ describe('ingress HTTP server (path mode)', () => {
             bundle_uri: 's3://x/',
             spec: AgentSpecSchema.parse({
                 model: 'x',
-                triggers: [{ type: 'chat', config: { require_auth: false } }],
+                triggers: [
+                    {
+                        type: 'chat',
+                        config: {},
+                        auth: { modes: [{ type: 'public', acknowledge_public_exposure: true }] },
+                    },
+                ],
             }),
         })
         await store.setRevisionState(rev.id, 'live')

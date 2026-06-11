@@ -50,15 +50,16 @@ import {
     SessionEventBus,
     SessionPrincipal,
     SessionQueue,
+    triggerAuthConfig,
 } from '@posthog/agent-shared'
 
 import { buildElevationResponse, principalDisplay, recordElevationRequest, requireAclAccess } from '../enqueue/acl'
 import { authorize, AuthProvider, principalsMatch, PUBLIC_ONLY_AUTH_PROVIDER } from '../enqueue/auth'
 import { enqueueOrResume } from '../enqueue/enqueue'
 import { asyncHandler } from '../routing/http-utils'
-import { RevisionResolver } from '../routing/resolver'
+import { RevisionResolver, RoutingMode } from '../routing/resolver'
 import { McpRequestBodySchema, McpStreamQuerySchema } from './mcp.schemas'
-import { hasTrigger, resolveAgent } from './resolve'
+import { resolveAgent } from './resolve'
 import type { TriggerModule } from './types'
 
 export interface McpTriggerDeps {
@@ -68,12 +69,17 @@ export interface McpTriggerDeps {
     teamId: number
     authProvider?: AuthProvider
     /**
-     * Public base URL the connect-info endpoint advertises. Defaults to
-     * reconstructing from the inbound request (`req.protocol://req.get('host')`),
-     * which is correct in dev but unreliable behind proxies. Set this in prod
-     * to whatever DNS the agent's MCP endpoint is reachable at.
+     * Public base URL the connect-info endpoint advertises in PATH mode (slug
+     * goes in the path: `<publicBaseUrl>/agents/<slug>/mcp`). Defaults to
+     * reconstructing from the inbound request, which is correct in dev but
+     * unreliable behind proxies. Ignored in domain mode.
      */
     publicBaseUrl?: string
+    /** Routing mode — decides the connect URL shape. Defaults to `path`. */
+    routingMode?: RoutingMode
+    /** Domain suffix for domain mode (e.g. `.agents.posthog.com`); the agent's
+     *  MCP endpoint is then `https://<slug><domainSuffix>/mcp`. */
+    domainSuffix?: string
 }
 
 interface McpRequest {
@@ -122,7 +128,9 @@ export function mcpRouter(deps: McpTriggerDeps): Router {
                 }
                 return
             }
-            if (!hasTrigger(resolved, 'mcp')) {
+            const mcpTrigger = resolved.revision.spec.triggers.find((t) => t.type === 'mcp')
+            const authConfig = mcpTrigger ? triggerAuthConfig(mcpTrigger) : null
+            if (!authConfig) {
                 res.status(404).json({ error: 'no_mcp_trigger' })
                 return
             }
@@ -143,7 +151,7 @@ export function mcpRouter(deps: McpTriggerDeps): Router {
                 const auth = await authorize(
                     req,
                     resolved.application,
-                    resolved.revision.spec,
+                    authConfig,
                     deps.authProvider ?? PUBLIC_ONLY_AUTH_PROVIDER
                 )
                 if (!auth.ok) {
@@ -418,17 +426,18 @@ export function mcpRouter(deps: McpTriggerDeps): Router {
                 }
                 return
             }
-            if (!hasTrigger(resolved, 'mcp')) {
+            const mcpTrigger = resolved.revision.spec.triggers.find((t) => t.type === 'mcp')
+            const authConfig = mcpTrigger ? triggerAuthConfig(mcpTrigger) : null
+            if (!authConfig) {
                 res.status(404).json({ error: 'no_mcp_trigger' })
                 return
             }
-            const base = deps.publicBaseUrl ?? `${req.protocol}://${req.get('host')}`
-            const url = `${base.replace(/\/$/, '')}/agents/${resolved.application.slug}/mcp`
+            const url = agentMcpUrl(deps, req, resolved.application.slug)
             // Multi-mode auth specs collapse to a single connect snippet —
             // pick the most specific accepted mode (non-public preferred).
             // Clients that want to see all accepted modes can introspect
             // via /schemas; the snippet is a one-shot copy-paste affordance.
-            const modes = resolved.revision.spec.auth.modes
+            const modes = authConfig.modes
             // Defensive fallback when modes[] is somehow empty (legacy data
             // bypassing the schema default). Use `posthog_internal` rather
             // than `public` so an unconfigured agent never renders an
@@ -447,8 +456,28 @@ export function mcpRouter(deps: McpTriggerDeps): Router {
     return r
 }
 
+/**
+ * Absolute URL of the agent's MCP endpoint, matching what the ingress actually
+ * serves in each routing mode (mirrors Django's `agent_ingress_route_url`):
+ *
+ *   domain → `https://<slug><domainSuffix>/mcp`  (slug in host, routes at root)
+ *   path   → `<publicBaseUrl>/agents/<slug>/mcp` (slug in path)
+ *
+ * In domain mode without a configured suffix the inbound request already
+ * arrived at the agent's own host, so reconstruct from it.
+ */
+function agentMcpUrl(deps: McpTriggerDeps, req: Request, slug: string): string {
+    if ((deps.routingMode ?? 'path') === 'domain') {
+        const suffix = deps.domainSuffix?.trim()
+        const base = suffix ? `https://${slug}${suffix}` : `${req.protocol}://${req.get('host')}`
+        return `${base.replace(/\/$/, '')}/mcp`
+    }
+    const base = deps.publicBaseUrl ?? `${req.protocol}://${req.get('host')}`
+    return `${base.replace(/\/$/, '')}/agents/${slug}/mcp`
+}
+
 interface ConnectAuth {
-    mode: 'public' | 'pat' | 'shared_secret' | 'posthog_internal' | string
+    mode: 'public' | 'posthog' | 'shared_secret' | 'posthog_internal' | string
     header: string | null
     scheme: string | null
     instructions: string
@@ -469,13 +498,13 @@ function buildConnectAuth(specAuth: { mode: string; header?: string }): ConnectA
             instructions: 'No authentication required — connect anonymously.',
         }
     }
-    if (specAuth.mode === 'pat') {
+    if (specAuth.mode === 'posthog') {
         return {
-            mode: 'pat',
+            mode: 'posthog',
             header: 'Authorization',
             scheme: 'Bearer',
             instructions:
-                'Set Authorization: Bearer <YOUR_POSTHOG_PAT>. Create a PAT at /me/settings#personal-api-keys; scope it `agents:read`.',
+                'Set Authorization: Bearer <YOUR_POSTHOG_API_KEY>. Create a personal API key at /me/settings#personal-api-keys; scope it `agents:read`.',
         }
     }
     if (specAuth.mode === 'posthog_internal') {
@@ -515,8 +544,8 @@ function buildConnectSnippets(
     auth: ConnectAuth
 ): { claude_code_command: string; mcp_json: Record<string, unknown> } {
     const headers: Record<string, string> = {}
-    if (auth.mode === 'pat') {
-        headers.Authorization = 'Bearer <YOUR_POSTHOG_PAT>'
+    if (auth.mode === 'posthog') {
+        headers.Authorization = 'Bearer <YOUR_POSTHOG_API_KEY>'
     } else if (auth.mode === 'posthog_internal') {
         headers['x-posthog-internal'] = '<INTERNAL_SECRET>'
     } else if (auth.mode === 'shared_secret' && auth.header) {

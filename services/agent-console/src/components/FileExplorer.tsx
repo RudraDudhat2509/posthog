@@ -18,7 +18,7 @@
 'use client'
 
 import { ChevronDownIcon, ChevronRightIcon, FileIcon, FolderIcon, FolderOpenIcon, SearchIcon } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@posthog/quill'
 
@@ -31,6 +31,8 @@ export interface FileTreeNode {
     description?: string
     /** Optional icon override for the file row. Default is a generic file icon. */
     icon?: React.ReactNode
+    /** Optional right-aligned slot (e.g. an approval lock or a "needs attention" badge). */
+    trailing?: React.ReactNode
     children?: FileTreeNode[]
 }
 
@@ -224,6 +226,27 @@ function isLayout(value: unknown): value is Layout {
     return Object.values(value as Record<string, unknown>).every((v) => typeof v === 'number' && Number.isFinite(v))
 }
 
+// Selected rows get a primary tint plus a left accent bar (drawn with an inset
+// box-shadow so it costs no layout width and survives the inline left padding).
+// Shared by folder rows, file rows, and search results so selection reads the
+// same everywhere.
+const ROW_SELECTED = 'bg-primary/10 font-medium text-foreground shadow-[inset_2px_0_0_0_var(--color-primary)]'
+const ROW_IDLE = 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+
+/** Whether `path` is the path of this node or any descendant — used to keep a
+ *  folder open while its selected child is buried inside it. */
+function subtreeContains(node: FileTreeNode, path: string | null): boolean {
+    if (!path) {
+        return false
+    }
+    for (const child of node.children ?? []) {
+        if (child.path === path || subtreeContains(child, path)) {
+            return true
+        }
+    }
+    return false
+}
+
 function TreeView({
     node,
     selected,
@@ -272,12 +295,34 @@ function FolderRow({
     depth: number
 }): React.ReactElement {
     const [open, setOpen] = useState(true)
+    // Folders are selectable when they carry a `path` (e.g. a config section
+    // whose detail is a section overview). Clicking always toggles open; if it
+    // has a path it also selects, so the selection stays put across toggles.
+    const isSelected = !!node.path && selected === node.path
+    // Auto-open when the selection lands on a buried child (e.g. a jump from the
+    // detail pane) so the active item is always revealed. Manual collapse still
+    // works afterward — this only fires when the selection enters the subtree.
+    const hasSelectedChild = useMemo(() => subtreeContains(node, selected), [node, selected])
+    useEffect(() => {
+        if (hasSelectedChild) {
+            setOpen(true)
+        }
+    }, [hasSelectedChild])
     return (
         <li>
             <button
                 type="button"
-                onClick={() => setOpen((o) => !o)}
-                className="flex w-full cursor-pointer items-center gap-1 px-2 py-1 text-left text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+                onClick={() => {
+                    setOpen((o) => !o)
+                    if (node.path) {
+                        onSelect(node.path)
+                    }
+                }}
+                aria-current={isSelected ? 'true' : undefined}
+                className={
+                    (isSelected ? ROW_SELECTED : ROW_IDLE) +
+                    ' flex w-full cursor-pointer items-center gap-1 px-2 py-1 text-left transition-colors'
+                }
                 style={{ paddingLeft: `${8 + depth * 12}px` }}
             >
                 {open ? (
@@ -285,12 +330,14 @@ function FolderRow({
                 ) : (
                     <ChevronRightIcon className="h-3 w-3 shrink-0" />
                 )}
-                {open ? (
-                    <FolderOpenIcon className="h-3.5 w-3.5 shrink-0" />
-                ) : (
-                    <FolderIcon className="h-3.5 w-3.5 shrink-0" />
-                )}
-                <span className="truncate">{node.name}</span>
+                {node.icon ??
+                    (open ? (
+                        <FolderOpenIcon className="h-3.5 w-3.5 shrink-0" />
+                    ) : (
+                        <FolderIcon className="h-3.5 w-3.5 shrink-0" />
+                    ))}
+                <span className="min-w-0 flex-1 truncate">{node.name}</span>
+                {node.trailing ? <span className="ml-auto shrink-0 pl-1">{node.trailing}</span> : null}
             </button>
             {open && node.children && node.children.length > 0 ? (
                 <TreeView
@@ -325,9 +372,7 @@ function FileRow({
                 onClick={() => onSelect(node.path!)}
                 aria-current={selected ? 'true' : undefined}
                 className={
-                    (selected
-                        ? 'bg-accent text-foreground'
-                        : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground') +
+                    (selected ? ROW_SELECTED : ROW_IDLE) +
                     ' flex w-full cursor-pointer items-start gap-1.5 px-2 py-1 text-left transition-colors'
                 }
                 style={{ paddingLeft: `${8 + depth * 12 + 16}px` }}
@@ -341,6 +386,7 @@ function FileRow({
                         </span>
                     ) : null}
                 </span>
+                {node.trailing ? <span className="mt-px shrink-0 pl-1">{node.trailing}</span> : null}
             </button>
         </li>
     )
@@ -374,9 +420,7 @@ function SearchResultsList({
                             onClick={() => onSelectPath(r.path)}
                             aria-current={isActive ? 'true' : undefined}
                             className={
-                                (isActive
-                                    ? 'bg-accent text-foreground'
-                                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground') +
+                                (isActive ? ROW_SELECTED : ROW_IDLE) +
                                 ' flex w-full cursor-pointer flex-col gap-0.5 rounded px-2 py-1 text-left text-xs transition-colors'
                             }
                         >

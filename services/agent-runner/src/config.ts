@@ -68,13 +68,23 @@ export const AgentRunnerConfigSchema = PlatformConfigSchema.extend({
         .string()
         .optional()
         .describe(
-            'PostHog project API key for the LLM analytics sink. Captures `$ai_generation` + `$ai_span` via standard /capture. Unset → NoopAnalyticsSink (dev / harness).'
+            'Fallback PostHog project key for the LLM analytics sink. By default each event routes to the owning team’s OWN project (team_id → phc_); this key only catches events whose team has no api_token. Setting either this or POSTHOG_ANALYTICS_HOST enables the sink; with neither → NoopAnalyticsSink (CI).'
         ),
     posthogAnalyticsHost: z
         .string()
         .url()
         .optional()
-        .describe('PostHog capture host for the analytics sink. Defaults to `https://us.posthog.com` when unset.'),
+        .describe(
+            'PostHog capture host for the analytics sink (the region the runner’s teams live in). Defaults to `https://us.posthog.com` when unset. Setting it enables per-team routing even without a fallback key.'
+        ),
+    consoleBaseUrl: z
+        .string()
+        .url()
+        .optional()
+        .transform((v): string | undefined => v ?? (isDev() ? 'http://localhost:3040' : undefined))
+        .describe(
+            'Base URL of the agent console. Used to build clickable approval links (`<base>/approvals?request=<id>`) surfaced to the model on a gated tool call. Dev defaults to the local console (`:3040`); prod sets the deployed host via the chart. Unset in prod → relative links (still clickable in-console, not in Slack).'
+        ),
     memoryS3Endpoint: z
         .string()
         .url()
@@ -212,6 +222,7 @@ const ENV_KEY_MAP = extendEnvKeyMap<AgentRunnerConfig>(PLATFORM_ENV_KEY_MAP, {
     MODEL_API_KEY: 'modelApiKey',
     POSTHOG_ANALYTICS_API_KEY: 'posthogAnalyticsApiKey',
     POSTHOG_ANALYTICS_HOST: 'posthogAnalyticsHost',
+    AGENT_CONSOLE_BASE_URL: 'consoleBaseUrl',
     AGENT_MEMORY_S3_ENDPOINT: 'memoryS3Endpoint',
     AGENT_MEMORY_S3_REGION: 'memoryS3Region',
     AGENT_MEMORY_S3_BUCKET: 'memoryS3Bucket',

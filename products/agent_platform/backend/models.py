@@ -55,7 +55,9 @@ class AgentApplication(ProductTeamModel, UUIDModel):
     """One agent. Identified by (team, slug). Holds team secrets."""
 
     name = models.CharField(max_length=255)
-    slug = models.CharField(max_length=63)
+    # SlugField adds Django's validate_slug ([a-zA-Z0-9_-]) so node-side writers
+    # can't land a slug that later builds an unsafe preview-proxy URL.
+    slug = models.SlugField(max_length=63)
     description = models.TextField(blank=True, default="", db_default="")
 
     # Encrypted JSON env block. Decrypted at runtime by the worker via
@@ -104,7 +106,7 @@ class AgentRevision(ProductTeamModel, UUIDModel):
     # Django (authoring API) sets team_id on create; the node-side createRevision
     # (test harness) omits it, so allow null rather than force every node writer
     # to thread it. Django-created rows always carry it.
-    team_id = models.BigIntegerField(db_index=True, null=True)
+    team_id = models.BigIntegerField(db_index=True, null=True)  # type: ignore[assignment]  # nullable override of ProductTeamModel.team_id (node writers omit it)
 
     application = models.ForeignKey(
         AgentApplication,
@@ -302,7 +304,7 @@ class AgentSessionCredential(ProductTeamModel):
 
     # The node credential broker upserts by session_id only (no team_id in hand);
     # the row is already team-scoped via its session. Allow null.
-    team_id = models.BigIntegerField(db_index=True, null=True)
+    team_id = models.BigIntegerField(db_index=True, null=True)  # type: ignore[assignment]  # nullable override of ProductTeamModel.team_id (node writers omit it)
     session_id = models.UUIDField(primary_key=True)
     encrypted_credentials = models.TextField()
     expires_at = models.DateTimeField()

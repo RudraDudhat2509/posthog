@@ -5,11 +5,11 @@ import type { PlaybookId } from './playbookIds'
 
 // Representative MCP tools for executing each playbook. Curated (not derived from
 // the per-tool description pointers, which map each tool to a single playbook —
-// here a tool can legitimately appear under several). A vitest drift guard asserts
-// every name resolves to a real tool definition. Names absent from the running
-// surface (e.g. an op missing from a stale OpenAPI snapshot) are skipped silently.
-export const PLAYBOOK_TOOLS: Record<PlaybookId, readonly string[]> = {
-    'platform-mental-model': [],
+// here a tool can legitimately appear under several). Only playbooks with tools
+// are listed; the rest default to []. A vitest drift guard asserts every name
+// resolves to a real tool definition; names absent from the running surface are
+// skipped silently at render time.
+export const PLAYBOOK_TOOLS: Partial<Record<PlaybookId, readonly string[]>> = {
     'reading-an-agent': [
         'agent-applications-list',
         'agent-applications-retrieve',
@@ -55,22 +55,11 @@ export const PLAYBOOK_TOOLS: Record<PlaybookId, readonly string[]> = {
         'agent-applications-revisions-promote-create',
     ],
     'secrets-and-integrations': [
-        'agent-applications-set-env-create',
         'agent-applications-env-keys-list',
         'agent-applications-env-keys-get',
         'agent-applications-env-keys-clear',
     ],
     'designing-mcp-surfaces': ['agent-native-tools-list'],
-    'choosing-the-model': [],
-    'setting-up-slack-app': [],
-    'running-and-evaluating-tests': [],
-    'using-the-console-ui': [],
-    'working-outside-the-console': [],
-    'cost-and-quota-analysis': [],
-    'safety-and-boundaries': [],
-    // The shared skill / custom-tool template registry tools aren't part of this
-    // MCP surface, so there are no tools to list for this playbook.
-    'using-the-registry': [],
 }
 
 export interface PlaybookToolRef {
@@ -95,7 +84,7 @@ export function buildToolSurface(
     defs: ToolDefinitions = getToolDefinitions()
 ): PlaybookToolRef[] {
     const refs: PlaybookToolRef[] = []
-    for (const name of PLAYBOOK_TOOLS[playbookId]) {
+    for (const name of PLAYBOOK_TOOLS[playbookId] ?? []) {
         const def = defs[name]
         if (!def) {
             continue

@@ -1,8 +1,7 @@
 import { readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { registerPlaybookResources } from '@/resources/playbooks'
 import { AgentResolveResourceSchema } from '@/schema/tool-inputs'
 import { PLAYBOOK_IDS, PLAYBOOK_URI_PREFIX, playbookUri } from '@/tools/agentPlatform/playbookIds'
 import { PLAYBOOKS } from '@/tools/agentPlatform/playbooks'
@@ -11,10 +10,10 @@ import { resolveResourceHandler } from '@/tools/agentPlatform/resolveResource'
 import { getToolDefinitions } from '@/tools/toolDefinitions'
 import type { Context } from '@/tools/types'
 
-// Canonical source: the agent concierge bundle's skills dir. The build copies
-// these into shared/playbooks/ (embedded) — both must stay in lockstep with
-// PLAYBOOK_IDS.
-const DOCS_PLAYBOOKS_DIR = resolve(__dirname, '../../../agent-tests/src/examples/agent-concierge/skills')
+// Canonical source: the agent concierge bundle's skills dir (one `<id>/SKILL.md`
+// per skill). The build copies these into shared/playbooks/ (embedded) — both
+// must stay in lockstep with PLAYBOOK_IDS.
+const SKILLS_DIR = resolve(__dirname, '../../../agent-tests/src/examples/agent-concierge/skills')
 
 // Context whose api key carries the given scopes (drives the live tool surface).
 const ctxWithScopes = (scopes: string[]): Context =>
@@ -62,12 +61,12 @@ describe('agent-resolve-resource', () => {
     })
 
     describe('playbook inventory', () => {
-        it('PLAYBOOK_IDS matches the markdown files in the canonical docs dir', () => {
-            const docFiles = readdirSync(DOCS_PLAYBOOKS_DIR)
-                .filter((f) => f.endsWith('.md'))
-                .map((f) => f.replace(/\.md$/, ''))
+        it('PLAYBOOK_IDS matches the skill dirs in the concierge bundle', () => {
+            const skillDirs = readdirSync(SKILLS_DIR, { withFileTypes: true })
+                .filter((e) => e.isDirectory())
+                .map((e) => e.name)
                 .sort()
-            expect(docFiles).toEqual([...PLAYBOOK_IDS].sort())
+            expect(skillDirs).toEqual([...PLAYBOOK_IDS].sort())
         })
 
         it('every id has embedded, non-empty content', () => {
@@ -136,34 +135,6 @@ describe('agent-resolve-resource', () => {
             expect(result.content).not.toContain('Tools for this playbook')
             expect(result.tools.callable).toHaveLength(0)
             expect(result.tools.gated).toHaveLength(0)
-        })
-    })
-
-    describe('registerPlaybookResources', () => {
-        it('registers each playbook as a first-class resource at its fixed URI', async () => {
-            const calls: Array<{ name: string; uri: string; read: (u: URL) => Promise<unknown> }> = []
-            const server = {
-                registerResource: vi.fn(
-                    (name: string, uri: string, _meta: unknown, read: (u: URL) => Promise<unknown>) => {
-                        calls.push({ name, uri, read })
-                    }
-                ),
-            }
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            registerPlaybookResources(server as any)
-
-            expect(calls).toHaveLength(PLAYBOOK_IDS.length)
-            const uris = calls.map((c) => c.uri).sort()
-            expect(uris).toEqual(PLAYBOOK_IDS.map(playbookUri).sort())
-
-            // Each read callback returns the playbook's markdown at its own URI.
-            const sample = calls.find((c) => c.uri === playbookUri('safety-and-boundaries'))!
-            const read = (await sample.read({ toString: () => sample.uri } as URL)) as {
-                contents: Array<{ uri: string; mimeType: string; text: string }>
-            }
-            expect(read.contents[0]!.mimeType).toBe('text/markdown')
-            expect(read.contents[0]!.uri).toBe(sample.uri)
-            expect(read.contents[0]!.text).toBe(PLAYBOOKS['safety-and-boundaries'].content)
         })
     })
 })
