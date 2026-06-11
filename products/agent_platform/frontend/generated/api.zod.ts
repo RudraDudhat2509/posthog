@@ -1948,14 +1948,14 @@ export const AgentApplicationsEnvKeysSetBody = /* @__PURE__ */ zod
 
 /**
  * Authoring-side proxy for invoking a *draft* (or any non-live) revision.
-
-Closes the anonymous-draft-invoke gap: the public ingress URL refuses
-non-live invokes that don't carry the `x-agent-preview-secret` header;
-this proxy attaches it after authenticating the Django caller. See
-docs/agent-platform/plans/draft-preview-auth.md.
-
-URL: `/api/projects/<team>/agent_applications/<app>/preview-proxy/<rest>`
-Auth: standard PAT / session — `agents:read` scope.
+ *
+ * Closes the anonymous-draft-invoke gap: the public ingress URL refuses
+ * non-live invokes that don't carry the `x-agent-preview-secret` header;
+ * this proxy attaches it after authenticating the Django caller. See
+ * docs/agent-platform/plans/draft-preview-auth.md.
+ *
+ * URL: `/api/projects/<team>/agent_applications/<app>/preview-proxy/<rest>`
+ * Auth: standard PAT / session — `agents:read` scope.
  */
 export const AgentApplicationsPreviewProxyBody = /* @__PURE__ */ zod
     .object({

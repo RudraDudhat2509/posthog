@@ -1204,14 +1204,14 @@ export interface SetEnvKeyRequestApi {
 
 /**
  * Body forwarded verbatim to the agent ingress for a *preview* invoke of a
-non-live revision. The meaningful shape depends on the `rest` path segment:
-
-- `run` — `{ message }`: the user message that starts a new session.
-- `send` — `{ session_id, message }`: append a message to a running session.
-- `cancel` / `listen` — no body.
-
-Documents `message` / `session_id` so the generated MCP tool exposes them;
-any extra keys are still forwarded as-is to ingress.
+ * non-live revision. The meaningful shape depends on the `rest` path segment:
+ *
+ * - `run` — `{ message }`: the user message that starts a new session.
+ * - `send` — `{ session_id, message }`: append a message to a running session.
+ * - `cancel` / `listen` — no body.
+ *
+ * Documents `message` / `session_id` so the generated MCP tool exposes them;
+ * any extra keys are still forwarded as-is to ingress.
  */
 export interface PreviewProxyInvokeRequestApi {
     /** User message to deliver to the agent. Required for `run` (starts the session) and `send` (appends to it); ignored for `cancel` / `listen`. */
