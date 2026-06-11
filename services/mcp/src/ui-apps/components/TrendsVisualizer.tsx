@@ -2,7 +2,7 @@ import { type ReactElement, useState } from 'react'
 
 import { emptyStateIllustration } from '@posthog/mcp-ui'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from '@posthog/quill'
-import { BarChart as BarValueChart, TimeSeriesBarChart, TimeSeriesLineChart } from '@posthog/quill-charts'
+import { BarChart as BarValueChart, ciRanges, TimeSeriesBarChart, TimeSeriesLineChart } from '@posthog/quill-charts'
 
 import { buildTrendsBarChartModel } from 'products/product_analytics/frontend/insights/trends/TrendsBarChart/trendsBarChartTransforms'
 import {
@@ -16,14 +16,22 @@ import {
 
 import { BigNumber, Select } from './charts'
 import { CHART_THEME, colorAt } from './charts/theme'
+import { ChartSettings } from './ChartSettings'
+import {
+    type ChartType,
+    chartConfigFromTrendsFilter,
+    defaultChartType,
+    isBarFamily,
+    supportsPercentStack,
+} from './chartSettingsConfig'
 import type { TrendsResultItem, TrendsVisualizerProps } from './types'
-import { formatDate, getDisplayType, getSeriesLabel, isBarChart } from './utils'
+import { formatDate, getDisplayType, getSeriesLabel } from './utils'
 
-type ChartMode = 'line' | 'bar'
-
-const CHART_MODE_OPTIONS = [
+const CHART_TYPE_OPTIONS = [
     { value: 'line' as const, label: 'Line' },
+    { value: 'area' as const, label: 'Area' },
     { value: 'bar' as const, label: 'Bar' },
+    { value: 'stacked-bar' as const, label: 'Stacked bar' },
 ]
 
 const TOOLTIP_CONFIG = { pinnable: true, placement: 'top' as const }
@@ -45,7 +53,8 @@ function calculateTotal(results: TrendsResultItem[]): number {
 
 export function TrendsVisualizer({ query, results }: TrendsVisualizerProps): ReactElement {
     const displayType = getDisplayType(query)
-    const [chartMode, setChartMode] = useState<ChartMode>(isBarChart(displayType) ? 'bar' : 'line')
+    const [chartType, setChartType] = useState<ChartType>(defaultChartType(displayType))
+    const [chartConfig, setChartConfig] = useState(() => chartConfigFromTrendsFilter(query?.trendsFilter))
 
     if (!results || results.length === 0) {
         return (
@@ -58,6 +67,7 @@ export function TrendsVisualizer({ query, results }: TrendsVisualizerProps): Rea
         )
     }
 
+    // BoldNumber and ActionsBarValue aren't time series — no chart-type select, no options.
     if (displayType === 'BoldNumber') {
         const total = calculateTotal(results)
         const label = results[0] ? getSeriesLabel(results[0], 0) : 'Total'
@@ -65,7 +75,7 @@ export function TrendsVisualizer({ query, results }: TrendsVisualizerProps): Rea
     }
 
     // ActionsBarValue returns aggregated_value per series (empty data[]/days[]) — render a
-    // horizontal bar of totals, not a time series, so there's no line/bar mode toggle.
+    // horizontal bar of totals, not a time series.
     if (displayType === 'ActionsBarValue') {
         const items = results.map((item, i) => ({
             label: getSeriesLabel(item, i),
@@ -94,40 +104,68 @@ export function TrendsVisualizer({ query, results }: TrendsVisualizerProps): Rea
     }))
     const yAxisLabel = results.length === 1 && results[0] ? getSeriesLabel(results[0], 0) : undefined
 
+    // Area auto-stacks but derived overlays draw at raw per-series values, so they visually
+    // disconnect from the stacked totals. Mirror the web's pattern: disable those toggles in
+    // Options and force them off when rendering area mode.
+    const derivedSeriesDisabled = chartType === 'area'
+    const isPercentStackView = chartConfig.percentStack && supportsPercentStack(chartType)
+    // The dialog's y-unit choice wins over whatever the saved insight specified.
+    const effectiveTrendsFilter = { ...query?.trendsFilter, aggregationAxisFormat: chartConfig.yUnit }
+    // `valueLabels: true` falls back to the y-tick formatter, which already respects the
+    // y-unit and percent-stack view.
+    const valueLabels = chartConfig.showValueLabels ? true : undefined
+
     // Build only the active mode's chart model — toggling shouldn't recompute the hidden one.
     const renderChart = (): ReactElement => {
-        if (chartMode === 'bar') {
+        if (isBarFamily(chartType)) {
             const { series, config } = buildTrendsBarChartModel(trendResults, {
                 getColor: (_, index) => colorAt(index),
                 labels,
                 yAxisLabel,
-                isPercentStackView: false,
-                isGrouped: false,
+                trendsFilter: effectiveTrendsFilter,
+                isPercentStackView,
+                isGrouped: chartType === 'bar',
+                valueLabels,
                 xAxisTickFormatter: (value) => formatDate(value),
                 tooltip: TOOLTIP_CONFIG,
             })
             return <TimeSeriesBarChart series={series} labels={labels} theme={CHART_THEME} config={config} />
         }
         const series = buildTrendsSeries(trendResults, {
-            isArea: displayType === 'ActionsAreaGraph',
+            isArea: chartType === 'area',
             getColor: (_, index) => colorAt(index),
         })
         const config = buildTrendsLineTimeSeriesConfig({
             results: trendResults,
-            trendsFilter: query?.trendsFilter,
+            trendsFilter: effectiveTrendsFilter,
             yAxisLabel,
-            isPercentStackView: false,
+            isPercentStackView,
+            showTrendLines: chartConfig.showTrendLine && !derivedSeriesDisabled,
+            showMovingAverage: chartConfig.showMovingAverage && !derivedSeriesDisabled,
+            movingAverageIntervals: chartConfig.movingAverageIntervals,
+            showConfidenceIntervals: chartConfig.showConfidenceIntervals && !derivedSeriesDisabled,
+            confidenceLevel: chartConfig.confidenceLevel,
+            ciRanges,
+            valueLabels,
             showCrosshair: true,
             xAxisTickFormatter: (value) => formatDate(value),
+            tooltip: TOOLTIP_CONFIG,
         })
         return <TimeSeriesLineChart series={series} labels={labels} theme={CHART_THEME} config={config} />
     }
 
     return (
         <div>
-            <div className="mb-2 flex justify-end">
+            <div className="mb-2 flex items-center justify-end gap-2">
                 {/* eslint-disable-next-line react/forbid-elements */}
-                <Select value={chartMode} onChange={setChartMode} options={CHART_MODE_OPTIONS} />
+                <Select value={chartType} onChange={setChartType} options={CHART_TYPE_OPTIONS} />
+                <ChartSettings
+                    chartMode={isBarFamily(chartType) ? 'bar' : 'line'}
+                    config={chartConfig}
+                    onChange={setChartConfig}
+                    derivedSeriesDisabled={derivedSeriesDisabled}
+                    percentStackDisabled={!supportsPercentStack(chartType)}
+                />
             </div>
             <div className="flex flex-col w-full h-[400px]">{renderChart()}</div>
         </div>
