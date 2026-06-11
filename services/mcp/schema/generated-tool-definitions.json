@@ -357,7 +357,7 @@
         "feature": "agent_platform",
         "summary": "Invoke a draft revision via the Django preview-proxy",
         "title": "Invoke a draft revision via the Django preview-proxy",
-        "required_scopes": ["agents:read"],
+        "required_scopes": ["agents:write"],
         "annotations": {
             "destructiveHint": false,
             "idempotentHint": false,

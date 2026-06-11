@@ -1689,7 +1689,8 @@ export const getAgentApplicationsPreviewProxyUrl = (
  * docs/agent-platform/plans/draft-preview-auth.md.
  *
  * URL: `/api/projects/<team>/agent_applications/<app>/preview-proxy/<rest>`
- * Auth: standard PAT / session — `agents:read` scope.
+ * Auth: standard PAT / session — `agents:write` scope (POST run/send/cancel
+ * is a mutating invoke; the read-only `listen` GET is `agents:read`).
  */
 export const agentApplicationsPreviewProxy = async (
     projectId: string,
