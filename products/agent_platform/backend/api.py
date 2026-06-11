@@ -495,6 +495,12 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         # don't want the scope to drift between methods.
         "env_keys_key",
         "approvals_decide",
+        # POST `preview_proxy` forwards `run`/`send`/`cancel` — each starts,
+        # feeds, or kills a draft session, driving the agent's configured
+        # tools and incurring inference cost. That's a write-class capability,
+        # so it lives here even though it targets a non-live revision. The GET
+        # `listen` counterpart (read-only SSE tail) stays in read actions.
+        "preview_proxy",
     ]
     scope_object_read_actions = [
         "list",
@@ -504,10 +510,9 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         "session_logs",
         "stats",
         "env_keys_list",
-        # POST → `preview_proxy`, GET (SSE `listen`) → `preview_proxy_get`.
-        # DRF uses the bound function name as `view.action`, so the GET
-        # variant is its own entry in the scope-check map.
-        "preview_proxy",
+        # GET (SSE `listen`) → `preview_proxy_get`. DRF uses the bound function
+        # name as `view.action`, so the GET variant is its own scope-map entry;
+        # the mutating POST sibling (`preview_proxy`) is a write action above.
         "preview_proxy_get",
         "preview_token",
         "approvals_list",
@@ -752,7 +757,8 @@ class AgentApplicationViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
         docs/agent-platform/plans/draft-preview-auth.md.
 
         URL: `/api/projects/<team>/agent_applications/<app>/preview-proxy/<rest>`
-        Auth: standard PAT / session — `agents:read` scope.
+        Auth: standard PAT / session — `agents:write` scope (POST run/send/cancel
+        is a mutating invoke; the read-only `listen` GET is `agents:read`).
         """
         application = self.get_object()
         if application is None:

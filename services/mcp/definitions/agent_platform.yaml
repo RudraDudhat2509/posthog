@@ -141,7 +141,7 @@ tools:
         operation: agent_applications_preview_proxy
         enabled: true
         scopes:
-            - agents:read
+            - agents:write
         annotations:
             readOnly: false
             destructive: false
