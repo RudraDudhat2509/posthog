@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "properties": {
         "resource": {
-            "description": "Which operator playbook to fetch. Accepts either a bare id (one of: platform-mental-model, reading-an-agent, debugging-sessions, editing-agents-safely, authoring-new-agents, secrets-and-integrations, designing-mcp-surfaces, running-and-evaluating-tests, using-the-console-ui, working-outside-the-console, cost-and-quota-analysis, safety-and-boundaries, using-the-registry) or its resource URI (`posthog://agent-platform/playbooks/<id>`). Each playbook is also exposed as a first-class MCP resource at that URI, so clients that read resources can fetch it directly. A playbook is a markdown guide for doing a class of agent-platform operations well — the same skills the agent concierge uses.",
+            "description": "Which operator playbook to fetch. Accepts either a bare id (one of: auditing-the-fleet, authoring-new-agents, choosing-the-model, cost-and-quota-analysis, debugging-sessions, designing-mcp-surfaces, editing-agents-safely, platform-mental-model, querying-ai-observability, reading-an-agent, running-and-evaluating-tests, safety-and-boundaries, secrets-and-integrations, setting-up-slack-app, using-the-console-ui, working-outside-the-console) or its URI form (`posthog://agent-platform/playbooks/<id>`). A playbook is a markdown guide for doing a class of agent-platform operations well — the same skills the agent concierge uses.",
             "type": "string"
         }
     },
