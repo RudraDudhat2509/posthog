@@ -1578,6 +1578,11 @@ class HogLanguage(StrEnum):
     LIQUID = "liquid"
 
 
+class HogQLAlertEvaluation(StrEnum):
+    LAST_ROW = "last_row"
+    ANY_ROW = "any_row"
+
+
 class BounceRatePageViewMode(StrEnum):
     COUNT_PAGEVIEWS = "count_pageviews"
     UNIQ_URLS = "uniq_urls"
