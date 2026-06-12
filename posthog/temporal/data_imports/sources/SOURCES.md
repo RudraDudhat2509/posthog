@@ -126,6 +126,7 @@ the row lists both.
 | okta             | HTTP                        | requests                                                        | ✅                          |
 | notion           | HTTP                        | requests                                                        | ✅                          |
 | omnisend         | HTTP                        | requests                                                        | ✅                          |
+| ortto            | HTTP                        | requests                                                        | ✅                          |
 | paddle           | HTTP                        | requests                                                        | ✅                          |
 | optimizely       | HTTP                        | requests                                                        | ✅                          |
 | pagerduty        | HTTP                        | requests                                                        | ✅                          |
@@ -142,6 +143,7 @@ the row lists both.
 | postmark         | HTTP                        | requests                                                        | ✅                          |
 | productboard     | HTTP                        | requests                                                        | ✅                          |
 | recurly          | HTTP                        | requests + `rest_source.RESTClient`                             | ✅                          |
+| ramp             | HTTP                        | requests                                                        | ✅                          |
 | recharge         | HTTP                        | requests                                                        | ✅                          |
 | reddit_ads       | HTTP                        | requests + `rest_source.RESTClient`                             | ✅                          |
 | redshift         | DB protocol                 | psycopg (Postgres-compatible)                                   | ➖                          |
@@ -215,8 +217,14 @@ doesn't conflict with concurrent PRs.
 - adobe_commerce
 - adp_workforce_now
 - adyen
+- amazon_ads
+- amazon_cloudwatch
+- amazon_eventbridge
+- amazon_kinesis
 - amazon_s3
 - amazon_selling_partner
+- amazon_sns
+- amazon_sqs
 - apollo
 - apple_search_ads
 - attentive
@@ -273,7 +281,6 @@ doesn't conflict with concurrent PRs.
 - oracle
 - oracle_ebs
 - oracle_fusion
-- ortto
 - outbrain
 - outreach
 - pagerduty
@@ -284,7 +291,6 @@ doesn't conflict with concurrent PRs.
 - planetscale
 - qualtrics
 - quickbooks
-- ramp
 - ringcentral
 - sage_intacct
 - sailthru

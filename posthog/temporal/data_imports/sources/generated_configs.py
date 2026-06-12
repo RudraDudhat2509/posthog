@@ -164,7 +164,32 @@ class AmazonAdsSourceConfig(config.Config):
 
 
 @config.config
+class AmazonCloudWatchSourceConfig(config.Config):
+    pass
+
+
+@config.config
+class AmazonEventBridgeSourceConfig(config.Config):
+    pass
+
+
+@config.config
+class AmazonKinesisSourceConfig(config.Config):
+    pass
+
+
+@config.config
 class AmazonS3SourceConfig(config.Config):
+    pass
+
+
+@config.config
+class AmazonSNSSourceConfig(config.Config):
+    pass
+
+
+@config.config
+class AmazonSQSSourceConfig(config.Config):
     pass
 
 
@@ -939,7 +964,8 @@ class OracleSourceConfig(config.Config):
 
 @config.config
 class OrttoSourceConfig(config.Config):
-    pass
+    api_key: str
+    region: Literal["global", "au", "eu"] = config.value(default="global")
 
 
 @config.config
@@ -1075,7 +1101,9 @@ class QuickBooksSourceConfig(config.Config):
 
 @config.config
 class RampSourceConfig(config.Config):
-    pass
+    client_id: str
+    client_secret: str
+    environment: Literal["production", "sandbox"] = config.value(default="production")
 
 
 @config.config
@@ -1421,7 +1449,12 @@ def get_config_for_source(source: ExternalDataSourceType):
         ExternalDataSourceType.AIRCALL: AircallSourceConfig,
         ExternalDataSourceType.AIRTABLE: AirtableSourceConfig,
         ExternalDataSourceType.AMAZONADS: AmazonAdsSourceConfig,
+        ExternalDataSourceType.AMAZONCLOUDWATCH: AmazonCloudWatchSourceConfig,
+        ExternalDataSourceType.AMAZONEVENTBRIDGE: AmazonEventBridgeSourceConfig,
+        ExternalDataSourceType.AMAZONKINESIS: AmazonKinesisSourceConfig,
         ExternalDataSourceType.AMAZONS3: AmazonS3SourceConfig,
+        ExternalDataSourceType.AMAZONSNS: AmazonSNSSourceConfig,
+        ExternalDataSourceType.AMAZONSQS: AmazonSQSSourceConfig,
         ExternalDataSourceType.AMAZONSELLINGPARTNER: AmazonSellingPartnerSourceConfig,
         ExternalDataSourceType.AMPLITUDE: AmplitudeSourceConfig,
         ExternalDataSourceType.APOLLO: ApolloSourceConfig,

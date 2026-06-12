@@ -104,7 +104,7 @@ export namespace Schemas {
          */
       name: string;
       /**
-         * Identifier for the account in an external system (e.g. CRM ID). Optional.
+         * Identifier linking this account to its source customer — the analytics group key (the customer's organization id), used to match billing and external records. Optional.
          * @maxLength 400
          * @nullable
          */
@@ -13596,6 +13596,11 @@ export namespace Schemas {
      * * `SapSuccessFactors` - SapSuccessFactors
      * * `OracleEbs` - OracleEbs
      * * `OracleFusion` - OracleFusion
+     * * `AmazonSNS` - AmazonSNS
+     * * `AmazonEventBridge` - AmazonEventBridge
+     * * `AmazonSQS` - AmazonSQS
+     * * `AmazonKinesis` - AmazonKinesis
+     * * `AmazonCloudWatch` - AmazonCloudWatch
      * * `Custom` - Custom
      */
     export type ExternalDataSourceTypeEnum = typeof ExternalDataSourceTypeEnum[keyof typeof ExternalDataSourceTypeEnum];
@@ -13828,6 +13833,11 @@ export namespace Schemas {
       SapSuccessFactors: 'SapSuccessFactors',
       OracleEbs: 'OracleEbs',
       OracleFusion: 'OracleFusion',
+      AmazonSNS: 'AmazonSNS',
+      AmazonEventBridge: 'AmazonEventBridge',
+      AmazonSQS: 'AmazonSQS',
+      AmazonKinesis: 'AmazonKinesis',
+      AmazonCloudWatch: 'AmazonCloudWatch',
       Custom: 'Custom',
     } as const;
 
@@ -14067,6 +14077,11 @@ export namespace Schemas {
        * * `SapSuccessFactors` - SapSuccessFactors
        * * `OracleEbs` - OracleEbs
        * * `OracleFusion` - OracleFusion
+       * * `AmazonSNS` - AmazonSNS
+       * * `AmazonEventBridge` - AmazonEventBridge
+       * * `AmazonSQS` - AmazonSQS
+       * * `AmazonKinesis` - AmazonKinesis
+       * * `AmazonCloudWatch` - AmazonCloudWatch
        * * `Custom` - Custom */
       source_type: ExternalDataSourceTypeEnum;
     }
@@ -18184,6 +18199,11 @@ export namespace Schemas {
        * * `SapSuccessFactors` - SapSuccessFactors
        * * `OracleEbs` - OracleEbs
        * * `OracleFusion` - OracleFusion
+       * * `AmazonSNS` - AmazonSNS
+       * * `AmazonEventBridge` - AmazonEventBridge
+       * * `AmazonSQS` - AmazonSQS
+       * * `AmazonKinesis` - AmazonKinesis
+       * * `AmazonCloudWatch` - AmazonCloudWatch
        * * `Custom` - Custom */
       source_type: ExternalDataSourceTypeEnum;
       /** Connection credentials and a 'schemas' array. Keys depend on source_type. */
@@ -24127,6 +24147,7 @@ export namespace Schemas {
      * * `survey` - SURVEY
      * * `experiment` - EXPERIMENT
      * * `error_tracking` - ERROR_TRACKING
+     * * `customer_analytics` - CUSTOMER_ANALYTICS
      */
     export type NotificationEventSourceTypeEnum = typeof NotificationEventSourceTypeEnum[keyof typeof NotificationEventSourceTypeEnum];
 
@@ -24140,6 +24161,7 @@ export namespace Schemas {
       Survey: 'survey',
       Experiment: 'experiment',
       ErrorTracking: 'error_tracking',
+      CustomerAnalytics: 'customer_analytics',
     } as const;
 
     export interface NotificationEvent {
@@ -29087,7 +29109,7 @@ export namespace Schemas {
          */
       name?: string;
       /**
-         * Identifier for the account in an external system (e.g. CRM ID). Optional.
+         * Identifier linking this account to its source customer — the analytics group key (the customer's organization id), used to match billing and external records. Optional.
          * @maxLength 400
          * @nullable
          */
@@ -40625,18 +40647,13 @@ export namespace Schemas {
     export interface SourceConnectLink {
       /** The source type the link is for. */
       source_type: string;
-      /** 'oauth' = the user authorizes in their browser; 'credentials' = the user enters credentials in the PostHog UI. Either way secrets never pass through the agent.
+      /** What the user will do on the connect page: 'oauth' = authorize an account in their browser; 'credentials' = enter connection details (or pick OAuth where the source offers both). Either way secrets never pass through the agent, and the result is always a stored credential id.
        *
        * * `oauth` - oauth
        * * `credentials` - credentials */
       auth_method: AuthMethodEnum;
-      /** Full URL to share with the user. They open it in a browser to authorize or enter credentials directly in PostHog — credentials never pass through the agent or the chat. */
+      /** Full URL to share with the user. It opens the source's connection form in PostHog — credentials never pass through the agent or the chat. */
       connect_url: string;
-      /**
-         * The payload key to pass to data-warehouse-source-setup: for OAuth sources, the source's integration id key (e.g. 'hubspot_integration_id'); for credential sources, 'credential_id' referencing the credentials the user stored via the connect page.
-         * @nullable
-         */
-      integration_field: string | null;
       /** Next steps for the agent to relay to the user. */
       instructions: string;
     }
@@ -40886,6 +40903,11 @@ export namespace Schemas {
        * * `SapSuccessFactors` - SapSuccessFactors
        * * `OracleEbs` - OracleEbs
        * * `OracleFusion` - OracleFusion
+       * * `AmazonSNS` - AmazonSNS
+       * * `AmazonEventBridge` - AmazonEventBridge
+       * * `AmazonSQS` - AmazonSQS
+       * * `AmazonKinesis` - AmazonKinesis
+       * * `AmazonCloudWatch` - AmazonCloudWatch
        * * `Custom` - Custom */
       source_type: ExternalDataSourceTypeEnum;
       /** Connection details as flat keys for the source_type — the same fields the create flow accepts (host, port, password, API key, …). Checked against a live connection before being stored. */
@@ -40918,7 +40940,7 @@ export namespace Schemas {
     } as const;
 
     /**
-     * Connection details as flat keys for the source_type (discover required fields with the wizard tool). Prefer references over raw secrets: for OAuth sources pass the source's integration id key (e.g. {'hubspot_integration_id': 123}); for credential sources pass {'credential_id': <id>} referencing credentials the user stored via the connect-link page (discover ids with the stored_credentials endpoint) — they are merged in server-side and deleted once consumed. A 'schemas' array is NOT required — all discovered tables are enabled automatically with sensible sync defaults.
+     * Connection details as flat keys for the source_type (discover required fields with the wizard tool). Prefer references over raw secrets: pass {'credential_id': <id>} referencing the connection details the user stored via the connect-link page (discover ids with the stored_credentials endpoint) — they are merged in server-side and deleted once consumed. An already-connected OAuth integration can be passed via its id key instead (e.g. {'hubspot_integration_id': 123}). A 'schemas' array is NOT required — all discovered tables are enabled automatically with sensible sync defaults.
      */
     export type SourceSetupPayload = { [key: string]: unknown };
 
@@ -41151,9 +41173,14 @@ export namespace Schemas {
        * * `SapSuccessFactors` - SapSuccessFactors
        * * `OracleEbs` - OracleEbs
        * * `OracleFusion` - OracleFusion
+       * * `AmazonSNS` - AmazonSNS
+       * * `AmazonEventBridge` - AmazonEventBridge
+       * * `AmazonSQS` - AmazonSQS
+       * * `AmazonKinesis` - AmazonKinesis
+       * * `AmazonCloudWatch` - AmazonCloudWatch
        * * `Custom` - Custom */
       source_type: ExternalDataSourceTypeEnum;
-      /** Connection details as flat keys for the source_type (discover required fields with the wizard tool). Prefer references over raw secrets: for OAuth sources pass the source's integration id key (e.g. {'hubspot_integration_id': 123}); for credential sources pass {'credential_id': <id>} referencing credentials the user stored via the connect-link page (discover ids with the stored_credentials endpoint) — they are merged in server-side and deleted once consumed. A 'schemas' array is NOT required — all discovered tables are enabled automatically with sensible sync defaults. */
+      /** Connection details as flat keys for the source_type (discover required fields with the wizard tool). Prefer references over raw secrets: pass {'credential_id': <id>} referencing the connection details the user stored via the connect-link page (discover ids with the stored_credentials endpoint) — they are merged in server-side and deleted once consumed. An already-connected OAuth integration can be passed via its id key instead (e.g. {'hubspot_integration_id': 123}). A 'schemas' array is NOT required — all discovered tables are enabled automatically with sensible sync defaults. */
       payload?: SourceSetupPayload;
       /**
          * Table name prefix in HogQL, e.g. 'stripe' produces stripe_charges. Defaults to the source type.
