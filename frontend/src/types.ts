@@ -5210,6 +5210,7 @@ export const INTEGRATION_KINDS = [
     'linkedin-ads',
     'snapchat',
     'stripe',
+    'instagram',
     'intercom',
     'email',
     'twilio',

@@ -16,6 +16,7 @@ import IconGoogleCloud from 'public/services/google-cloud.png'
 import IconGoogleSearchConsole from 'public/services/google-search-console.svg'
 import IconGoogleSheets from 'public/services/google-sheets.svg'
 import IconHubspot from 'public/services/hubspot.png'
+import IconInstagram from 'public/services/instagram.png'
 import IconIntercom from 'public/services/intercom.png'
 import IconJira from 'public/services/jira.svg'
 import IconLinear from 'public/services/linear.png'
@@ -44,6 +45,7 @@ export const ICONS: Record<IntegrationKind, any> = {
     'google-sheets': IconGoogleSheets,
     snapchat: IconSnapchat,
     stripe: IconStripe,
+    instagram: IconInstagram,
     intercom: IconIntercom,
     'linkedin-ads': IconLinkedIn,
     email: IconMailjet,

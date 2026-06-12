@@ -91,6 +91,7 @@ the row lists both.
 | guru             | HTTP                        | requests                                                        | ✅                          |
 | hubspot          | HTTP                        | requests                                                        | ✅                          |
 | incident_io      | HTTP                        | requests                                                        | ✅                          |
+| instagram        | HTTP                        | requests                                                        | ✅                          |
 | intercom         | HTTP                        | requests + `rest_source.RESTClient`                             | ✅                          |
 | iterable         | HTTP                        | requests                                                        | ✅                          |
 | jira             | HTTP                        | requests                                                        | ✅                          |
@@ -255,7 +256,6 @@ doesn't conflict with concurrent PRs.
 - heap
 - helpscout
 - hibob
-- instagram
 - kafka
 - lattice
 - lever
