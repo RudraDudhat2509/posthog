@@ -37,3 +37,9 @@ class TestEngineeringAnalyticsFacade(BaseTest):
             api.list_workflow_health(team=self.team, date_from="-7d", date_to="-1d", source_id="abc")
 
         build.assert_called_once_with(team=self.team, date_from="-7d", date_to="-1d", source_id="abc")
+
+    def test_list_github_sources_delegates(self) -> None:
+        with mock.patch(f"{_LOGIC}.build_github_sources", return_value=mock.sentinel.result) as build:
+            assert api.list_github_sources(team=self.team) is mock.sentinel.result
+
+        build.assert_called_once_with(team=self.team)

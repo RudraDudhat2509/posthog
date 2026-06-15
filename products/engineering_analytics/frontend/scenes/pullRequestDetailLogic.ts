@@ -1,5 +1,6 @@
 import { afterMount, kea, key, path, props, reducers, selectors } from 'kea'
 import { loaders } from 'kea-loaders'
+import { router } from 'kea-router'
 
 import { ApiConfig } from 'lib/api'
 import { urls } from 'scenes/urls'
@@ -40,6 +41,8 @@ export const pullRequestDetailLogic = kea<pullRequestDetailLogicType>([
                     await engineeringAnalyticsPrLifecycle(projectId(), {
                         pr_number: props.number,
                         repo: `${props.repoOwner}/${props.repoName}`,
+                        // Read the same source the list was scoped to (carried in `?source=`).
+                        source_id: router.values.searchParams.source ?? undefined,
                     }),
             },
         ],

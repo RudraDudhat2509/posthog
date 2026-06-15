@@ -14,6 +14,7 @@ from posthog.utils import relative_date_parse
 
 from products.engineering_analytics.backend.facade.contracts import (
     CICardSummary,
+    GitHubSource,
     PRLifecycle,
     PullRequestList,
     WorkflowHealthItem,
@@ -23,6 +24,7 @@ from products.engineering_analytics.backend.logic.queries.ci_cards import query_
 from products.engineering_analytics.backend.logic.queries.pr_lifecycle import query_pr_lifecycle
 from products.engineering_analytics.backend.logic.queries.pull_request_list import query_pull_request_list
 from products.engineering_analytics.backend.logic.queries.workflow_health import query_workflow_health
+from products.engineering_analytics.backend.logic.sources import list_github_sources
 
 # Default recency window when a caller omits date_from. Relative strings (-30d) and
 # ISO8601 are both accepted and resolved against the team's timezone.
@@ -46,6 +48,10 @@ def build_pr_lifecycle(
 
 def build_ci_cards(*, team: Team, source_id: str | None = None) -> CICardSummary:
     return query_ci_cards(curated=CuratedGitHubSource.for_team(team, source_id=source_id))
+
+
+def build_github_sources(*, team: Team) -> list[GitHubSource]:
+    return list_github_sources(team=team)
 
 
 def build_pull_request_list(

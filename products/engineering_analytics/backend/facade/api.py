@@ -16,6 +16,7 @@ from posthog.models.team import Team
 from products.engineering_analytics.backend import logic
 from products.engineering_analytics.backend.facade.contracts import (
     CICardSummary,
+    GitHubSource,
     PRLifecycle,
     PullRequestList,
     WorkflowHealthItem,
@@ -53,3 +54,7 @@ def list_workflow_health(
     source_id: str | None = None,
 ) -> list[WorkflowHealthItem]:
     return logic.build_workflow_health(team=team, date_from=date_from, date_to=date_to, source_id=source_id)
+
+
+def list_github_sources(*, team: Team) -> list[GitHubSource]:
+    return logic.build_github_sources(team=team)

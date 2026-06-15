@@ -19,10 +19,12 @@ import re
 from dataclasses import dataclass
 from uuid import UUID
 
+from django.db.models import QuerySet
+
 from posthog.models.team import Team
 
 from products.data_warehouse.backend.types import ExternalDataSourceType
-from products.engineering_analytics.backend.facade.contracts import GitHubSourceNotConnectedError
+from products.engineering_analytics.backend.facade.contracts import GitHubSource, GitHubSourceNotConnectedError
 from products.warehouse_sources.backend.models.external_data_schema import ExternalDataSchema
 from products.warehouse_sources.backend.models.external_data_source import ExternalDataSource
 
@@ -57,11 +59,7 @@ def resolve_github_tables(*, team: Team, source_id: str | None = None) -> GitHub
     presentation layer maps it to a 400, so the UI prompts to connect a source and an agent gets
     an actionable error), or ``ValueError`` when ``source_id`` is not a UUID.
     """
-    sources = (
-        ExternalDataSource.objects.filter(team_id=team.pk, source_type=ExternalDataSourceType.GITHUB)
-        .exclude(deleted=True)
-        .order_by("created_at", "id")
-    )
+    sources = _github_sources(team)
     if source_id is not None:
         sources = sources.filter(id=_as_source_uuid(source_id))
     for source in sources:
@@ -73,6 +71,34 @@ def resolve_github_tables(*, team: Team, source_id: str | None = None) -> GitHub
     if source_id is not None:
         raise GitHubSourceNotConnectedError(_NO_SELECTED_SOURCE)
     raise GitHubSourceNotConnectedError()
+
+
+def list_github_sources(*, team: Team) -> list[GitHubSource]:
+    """The team's connected GitHub sources as selectable refs, oldest first.
+
+    Lists every non-deleted GitHub source — including ones whose endpoints aren't fully synced
+    yet — so a source picker shows the user everything they connected; selecting an unusable one
+    surfaces the same connect prompt ``resolve_github_tables`` drives. Each ``id`` is what the
+    caller passes back as ``source_id`` to read that source.
+    """
+    return [
+        GitHubSource(
+            id=str(source.id),
+            repo=str((source.job_inputs or {}).get("repository") or ""),
+            prefix=source.prefix or "",
+        )
+        for source in _github_sources(team)
+    ]
+
+
+def _github_sources(team: Team) -> QuerySet[ExternalDataSource]:
+    """The team's non-deleted GitHub sources, oldest first — the order ``resolve_github_tables``
+    defaults from, so a picker's first entry matches the default source."""
+    return (
+        ExternalDataSource.objects.filter(team_id=team.pk, source_type=ExternalDataSourceType.GITHUB)
+        .exclude(deleted=True)
+        .order_by("created_at", "id")
+    )
 
 
 # Distinct from the no-source message: the caller picked a source that isn't a usable GitHub
