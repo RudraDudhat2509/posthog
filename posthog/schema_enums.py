@@ -1580,6 +1580,7 @@ class HogLanguage(StrEnum):
 
 class HogQLAlertEvaluation(StrEnum):
     LAST_ROW = "last_row"
+    FIRST_ROW = "first_row"
     ANY_ROW = "any_row"
 
 
