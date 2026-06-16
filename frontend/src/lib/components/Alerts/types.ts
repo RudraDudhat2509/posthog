@@ -5,19 +5,23 @@ import {
     AlertScheduleRestrictionWindow,
     AlertState,
     DetectorConfig,
+    FunnelsAlertConfig,
     HogQLAlertConfig,
     InsightThreshold,
     TrendsAlertConfig,
 } from '~/queries/schema/schema-general'
 import { QueryBasedInsightModel, UserBasicType } from '~/types'
 
-export type AlertConfig = TrendsAlertConfig | HogQLAlertConfig
+export type AlertConfig = TrendsAlertConfig | HogQLAlertConfig | FunnelsAlertConfig
 
 export const isTrendsAlertConfig = (config: AlertConfig | null | undefined): config is TrendsAlertConfig =>
     config?.type === 'TrendsAlertConfig'
 
 export const isHogQLAlertConfig = (config: AlertConfig | null | undefined): config is HogQLAlertConfig =>
     config?.type === 'HogQLAlertConfig'
+
+export const isFunnelsAlertConfig = (config: AlertConfig | null | undefined): config is FunnelsAlertConfig =>
+    config?.type === 'FunnelsAlertConfig'
 
 // Capability helpers — read at call sites instead of bare `isTrendsAlertConfig`/`isHogQLAlertConfig`
 // checks, so the intent ("does this alert kind support X") is explicit. Kept separate even where
