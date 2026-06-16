@@ -233,6 +233,9 @@ class TestPostgresSourceNonRetryableErrors:
         "error_msg",
         [
             'OperationalError: connection failed: connection to server at "10.0.0.1", port 5432 failed: FATAL: MaxClientsInSessionMode: max clients reached',
+            # Supavisor session-mode wording for the same pooler saturation — transient, must stay
+            # retryable even though credential validation maps it to a friendly message.
+            'OperationalError: connection failed: connection to server at "52.45.94.125", port 5432 failed: FATAL:  (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15',
             'OperationalError: connection failed: connection to server at "10.0.0.1", port 5432 failed: FATAL: remaining connection slots are reserved for roles with the SUPERUSER attribute',
             'OperationalError: connection failed: connection to server at "10.0.0.1", port 5432 failed: FATAL: too many connections for role "user"',
             # Mid-stream SSL/connection drops during schema discovery — the pooler culled an idle
@@ -1029,6 +1032,17 @@ class TestValidateCredentialsErrorMapping:
                 "Your database closed the connection unexpectedly while connecting. This usually means the host "
                 "or port is wrong, the server requires SSL/TLS, or a connection pooler, firewall, or SSH tunnel "
                 "dropped the connection. Check your host, port, and SSL settings.",
+            ),
+            # Supabase/Supavisor session-mode pooler with no free client slots. The pool_size number
+            # is volatile, so the match is on the stable "max clients reached in session mode" phrase.
+            (
+                'connection failed: connection to server at "52.45.94.125", port 5432 failed: '
+                "FATAL:  (EMAXCONNSESSION) max clients reached in session mode - max clients are "
+                "limited to pool_size: 15",
+                "Your database's connection pooler has no free client connections (\"max clients "
+                "reached in session mode\"). Raise the pooler's client limit (for example increase "
+                "pool_size, or switch it to transaction mode) or reduce the number of concurrent "
+                "connections to your database, then try again.",
             ),
             # Unmapped errors fall back to the generic message.
             (
