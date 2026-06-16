@@ -21,6 +21,9 @@ import { alignResolvedDateRangeToInterval, formatResolvedDateRange } from 'lib/u
 import { funnelDataLogic } from 'scenes/funnels/funnelDataLogic'
 import { axisLabel } from 'scenes/insights/aggregationAxisFormat'
 import { AxisLabelsFilter } from 'scenes/insights/EditorFilters/AxisLabelsFilter'
+import { BoldNumberShowComparisonPillFilter } from 'scenes/insights/EditorFilters/BoldNumberShowComparisonPillFilter'
+import { BoldNumberShowSparklineFilter } from 'scenes/insights/EditorFilters/BoldNumberShowSparklineFilter'
+import { BoldNumberShowTitleFilter } from 'scenes/insights/EditorFilters/BoldNumberShowTitleFilter'
 import { HideIncompleteConversionWindowPeriodsFilter } from 'scenes/insights/EditorFilters/HideIncompleteConversionWindowPeriodsFilter'
 import { HideWeekendsFilter } from 'scenes/insights/EditorFilters/HideWeekendsFilter'
 import { LifecyclePercentagesFilter } from 'scenes/insights/EditorFilters/LifecyclePercentagesFilter'
@@ -159,6 +162,7 @@ export function InsightDisplayConfig(): JSX.Element {
     } = useValues(trendsDataLogic(insightProps))
 
     const isBoxPlot = display === ChartDisplayType.BoxPlot
+    const isBoldNumber = display === ChartDisplayType.BoldNumber
     const advancedOptions: LemonMenuItems = [
         ...(showSmoothing
             ? [
@@ -246,6 +250,13 @@ export function InsightDisplayConfig(): JSX.Element {
                                     ? [{ label: () => <HideWeekendsFilter /> }]
                                     : []),
                                 ...(showAnnotationsConfig ? [{ label: () => <ShowAnnotationsFilter /> }] : []),
+                                ...(isBoldNumber
+                                    ? [
+                                          { label: () => <BoldNumberShowTitleFilter /> },
+                                          { label: () => <BoldNumberShowSparklineFilter /> },
+                                          { label: () => <BoldNumberShowComparisonPillFilter /> },
+                                      ]
+                                    : []),
                             ],
                   },
               ]
@@ -413,7 +424,10 @@ export function InsightDisplayConfig(): JSX.Element {
         (showAxisLabelsConfig && normalizeAxisLabel(trendsFilter?.yAxisLabel) ? 1 : 0) +
         (showMultipleYAxes ? 1 : 0) +
         (trendsFilter?.hideWeekends && hideWeekendsEnabled ? 1 : 0) +
-        (showAnnotationsConfig && showAnnotations === false ? 1 : 0)
+        (showAnnotationsConfig && showAnnotations === false ? 1 : 0) +
+        (isBoldNumber && trendsFilter?.boldNumberShowTitle ? 1 : 0) +
+        (isBoldNumber && trendsFilter?.boldNumberShowSparkline ? 1 : 0) +
+        (isBoldNumber && trendsFilter?.boldNumberShowComparisonPill ? 1 : 0)
 
     return (
         <div

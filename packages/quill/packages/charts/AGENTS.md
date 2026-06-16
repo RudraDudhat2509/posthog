@@ -68,6 +68,7 @@ Charts fill their container and need a parent with real dimensions — a `0`-hei
 - `ValueLabels` formatter gets `(value, seriesIndex, dataIndex, context)`; in percent layouts `value` is a 0–1 fraction — use `context.rawValue` for the original.
 - `Legend` is presentational: pass `items`, `onItemClick`, `hiddenKeys` — filtering series is the caller's state. `LegendItem.secondaryLabel` shows muted trailing text (e.g. a slope chart's per-series change).
 - `SlopeChart` config: `showSeriesLabels` (name beside each end point; steepest line wins label collisions), `showStartLabels`/`showEndLabels` (defaults overridable per series via `meta.showStartLabel`/`showEndLabel`), `legend` (`{ show, position }`, rows carry the formatted change), `valueFormatter`/`deltaFormatter`. The value axis is hidden by default — the start/end labels are the readout.
+- `MetricCard` defaults to a left-aligned tile. `align="center"` centers title/headline/subtitle. Pass `title={null}` to drop the title row (the header band collapses when there is no title and no change pill). `headline={(formattedValue) => node}` replaces the default `text-4xl` headline — use it to wrap the value for auto-scaling or custom typography (the trends "Number" insight passes a `Textfit`-wrapped node). When a sparkline is present, leave `headline` unset so the hover-swap animation drives the headline.
 - y-axis `format`: `numeric | short | percentage | percentage_scaled | currency | duration | duration-ms`, plus `prefix`/`suffix`.
 
 ## Maintenance
