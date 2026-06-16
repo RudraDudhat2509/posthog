@@ -498,3 +498,21 @@ class TestMSSQLSourceNonRetryableErrors:
     def test_permission_denied_errors_are_non_retryable(self, error_msg):
         non_retryable = MSSQLSource().get_non_retryable_errors()
         assert any(pattern in error_msg for pattern in non_retryable.keys()), error_msg
+
+    @pytest.mark.parametrize(
+        "error_msg",
+        [
+            # SQL Server error 208 — the object being synced (here a view) resolves to an inner
+            # object that doesn't exist or the connecting user can't read. Real pymssql message.
+            "SQL Server message 208, severity 16, state 1, procedure b'VentasAsesorMes', line 8:\n"
+            "Invalid object name 'Imagiq.dbo.inv_cuedoc'.DB-Lib error message 20018, severity 16:\n"
+            "General SQL Server error: Check messages from the SQL Server",
+            # SQL Server error 207 — a referenced column no longer exists.
+            "SQL Server message 207, severity 16, state 1, procedure b'\\xb0z\\x16,\\xff\\xff', line 39:\n"
+            "Invalid column name 'usr_modelo'.DB-Lib error message 20018, severity 16:\n"
+            "General SQL Server error: Check messages from the SQL Server",
+        ],
+    )
+    def test_invalid_object_or_column_errors_are_non_retryable(self, error_msg):
+        non_retryable = MSSQLSource().get_non_retryable_errors()
+        assert any(pattern in error_msg for pattern in non_retryable.keys()), error_msg

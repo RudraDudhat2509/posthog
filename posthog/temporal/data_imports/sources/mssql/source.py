@@ -56,6 +56,19 @@ class MSSQLSource(SQLSource[MSSQLSourceConfig], SSHTunnelMixin, ValidateDatabase
             # names that follow it.
             "The SELECT permission was denied on the object": "Your SQL Server login doesn't have permission to read one of the tables or views being synced. Grant it SELECT access (for example via the db_datareader role or an explicit GRANT SELECT) on the objects you want to import, then re-enable the sync.",
             "Cannot find the CREDENTIAL": "Cannot find the credential - check that it exists and you have permission to access it",
+            # SQL Server error 208, raised by pymssql when the `SELECT` in `get_rows` hits an
+            # object that can't be resolved. The table/view was dropped or renamed after we
+            # discovered it, or — most commonly — it's a view whose definition references another
+            # object (often a cross-database three-part name) that no longer exists or that the
+            # connecting user has no permission to read. SQL Server only validates a view body at
+            # execution time, so this surfaces during the sync rather than during schema listing.
+            # The object shape is fixed on the customer side, so retrying never recovers.
+            "Invalid object name": "We couldn't find one of the tables or views being synced. The object may have been dropped or renamed, or it's a view whose definition references an object that no longer exists or that your SQL Server user can't read. Check that the object still exists and that the connecting user has permission to read it (and anything its view definition references), then re-enable the sync.",
+            # SQL Server error 207, the column-level counterpart of 208: the `SELECT` references a
+            # column that doesn't exist — a column dropped or renamed at the source, or a view
+            # whose definition selects a column that's no longer present. Fixed source-data shape,
+            # so retrying won't help.
+            "Invalid column name": "One of the columns being synced no longer exists in your SQL Server. A column was likely dropped or renamed, or a view's definition references a column that's no longer present. Fix the column or view definition at the source, then re-enable the sync.",
             # Raised by the `sshtunnel` library (via the shared `open_ssh_tunnel` helper) when the
             # SSH tunnel can't be brought up — the bastion host is unreachable, the host/port is
             # wrong, the SSH key/credentials are rejected, or a firewall blocks PostHog's IPs. This
