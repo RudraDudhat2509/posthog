@@ -15,7 +15,7 @@ from django.core.cache import cache
 
 import posthoganalytics
 
-from posthog.schema import RecordingOrder, RecordingsQuery
+from posthog.schema import HogQLQueryResponse, RecordingOrder, RecordingsQuery
 
 from posthog.hogql import ast
 from posthog.hogql.query import execute_hogql_query
@@ -35,6 +35,13 @@ try:
     HAS_EE = True
 except ImportError:
     HAS_EE = False
+
+
+def _run_replay_hogql_query(
+    team: Team, query: str, query_type: str, placeholders: dict[str, ast.Expr]
+) -> HogQLQueryResponse:
+    tag_queries(product=Product.REPLAY, feature=Feature.QUERY, team_id=team.pk)
+    return execute_hogql_query(query=query, team=team, query_type=query_type, placeholders=placeholders)
 
 
 class GetSessionIdsCallable(Protocol):
@@ -296,11 +303,10 @@ class ExpiringPlaylistSource(SyntheticPlaylistSource):
             )
         """
 
-        tag_queries(product=Product.REPLAY, feature=Feature.QUERY, team_id=team.pk)
-        response = execute_hogql_query(
-            query=query,
-            team=team,
-            query_type="SessionRecordingExpiringSoonCountQuery",
+        response = _run_replay_hogql_query(
+            team,
+            query,
+            "SessionRecordingExpiringSoonCountQuery",
             placeholders={
                 "date_from": ast.Constant(value=date_range.date_from()),
                 "date_to": ast.Constant(value=date_range.date_to()),
@@ -373,11 +379,10 @@ class FrustrationSignalsPlaylistSource(SyntheticPlaylistSource):
             LIMIT 1000
         """
 
-        tag_queries(product=Product.REPLAY, feature=Feature.QUERY, team_id=team.pk)
-        response = execute_hogql_query(
-            query=query,
-            team=team,
-            query_type="SessionRecordingFrustrationSignalsQuery",
+        response = _run_replay_hogql_query(
+            team,
+            query,
+            "SessionRecordingFrustrationSignalsQuery",
             placeholders={
                 "date_from": ast.Constant(value=date_from),
                 "date_to": ast.Constant(value=now_ts),
@@ -538,11 +543,10 @@ class NewUrlsSyntheticPlaylistSource(SyntheticPlaylistSource):
             LIMIT 50000
         """
 
-        tag_queries(product=Product.REPLAY, feature=Feature.QUERY, team_id=team.pk)
-        response = execute_hogql_query(
-            query=query,
-            team=team,
-            query_type="SessionRecordingNewUrlsQuery",
+        response = _run_replay_hogql_query(
+            team,
+            query,
+            "SessionRecordingNewUrlsQuery",
             placeholders={
                 "history_start": ast.Constant(value=history_window_start),
             },

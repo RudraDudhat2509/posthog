@@ -1076,13 +1076,18 @@ class TestExpiringSyntheticPlaylist(APIBaseTest):
         sync_execute("TRUNCATE TABLE sharded_session_replay_events")
 
     def _produce_recording(
-        self, session_id: str, started_days_ago: int, retention_period_days: int, is_deleted: bool = False
+        self,
+        session_id: str,
+        started_days_ago: int,
+        retention_period_days: int,
+        is_deleted: bool = False,
+        team_id: int | None = None,
     ) -> None:
         from posthog.session_recordings.queries.test.session_replay_sql import produce_replay_summary
 
         started_at = now() - timedelta(days=started_days_ago)
         produce_replay_summary(
-            team_id=self.team.pk,
+            team_id=team_id if team_id is not None else self.team.pk,
             session_id=session_id,
             distinct_id="user",
             first_timestamp=started_at,
@@ -1097,7 +1102,7 @@ class TestExpiringSyntheticPlaylist(APIBaseTest):
             ("expires_within_ten_days", 1, 5, False, 1),
             ("retention_too_long_to_expire_soon", 1, 30, False, 0),
             ("deleted_recording_excluded", 1, 5, True, 0),
-            ("started_before_date_window", 10, 5, False, 0),
+            ("started_before_date_window_but_expiry_still_in_future", 5, 8, False, 0),
         ]
     )
     def test_expiring_count(
@@ -1109,11 +1114,21 @@ class TestExpiringSyntheticPlaylist(APIBaseTest):
 
         assert count == expected
 
-    def test_expiring_count_sums_distinct_sessions(self) -> None:
-        self._produce_recording(str(uuid7()), started_days_ago=1, retention_period_days=5)
+    def test_expiring_count_dedupes_multiple_rows_for_one_session(self) -> None:
+        duplicated_session_id = str(uuid7())
+        self._produce_recording(duplicated_session_id, started_days_ago=1, retention_period_days=5)
+        self._produce_recording(duplicated_session_id, started_days_ago=1, retention_period_days=5)
         self._produce_recording(str(uuid7()), started_days_ago=2, retention_period_days=6)
         self._produce_recording(str(uuid7()), started_days_ago=1, retention_period_days=30)
 
         count = ExpiringPlaylistSource().count_session_ids(self.team, self.user)
 
         assert count == 2
+
+    def test_expiring_count_is_team_scoped(self) -> None:
+        self._produce_recording(str(uuid7()), started_days_ago=1, retention_period_days=5)
+        self._produce_recording(str(uuid7()), started_days_ago=1, retention_period_days=5, team_id=self.team.pk + 1)
+
+        count = ExpiringPlaylistSource().count_session_ids(self.team, self.user)
+
+        assert count == 1
