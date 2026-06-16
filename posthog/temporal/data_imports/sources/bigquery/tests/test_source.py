@@ -576,7 +576,7 @@ def test_has_duplicate_primary_keys_captures_unexpected_errors():
 
 
 def test_bigquery_billing_not_enabled_is_non_retryable():
-    """A `billingNotEnabled` Forbidden 403 is a customer config issue — retrying never helps."""
+    # A `billingNotEnabled` Forbidden 403 is a customer config issue — retrying never helps.
     # Representative message from a real failed job (the `reason: billingNotEnabled` 403 raised
     # by `job.result()` when the source project has BigQuery billing disabled / is in sandbox mode).
     internal_error = (
@@ -588,5 +588,7 @@ def test_bigquery_billing_not_enabled_is_non_retryable():
 
     non_retryable_errors = BigQuerySource().get_non_retryable_errors()
 
+    billing_key = "Billing has not been enabled for this project"
+    assert billing_key in non_retryable_errors, "expected billing key to be non-retryable"
     # Mirror the substring match used by `update_external_data_job_model`.
-    assert any(key in internal_error for key in non_retryable_errors)
+    assert billing_key in internal_error
