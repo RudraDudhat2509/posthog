@@ -659,6 +659,7 @@ class ExternalDataSourceType(models.TextChoices):
     WIKIPEDIAPAGEVIEWS = "WikipediaPageviews", "WikipediaPageviews"
     YAHOOFINANCE = "YahooFinance", "YahooFinance"
     CLARIFAI = "Clarifai", "Clarifai"
+    AHREFS = "Ahrefs", "Ahrefs"
     CUSTOM = "Custom", "Custom"
 
 

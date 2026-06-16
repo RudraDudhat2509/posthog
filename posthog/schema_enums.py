@@ -1767,6 +1767,7 @@ class ExternalDataSourceType(StrEnum):
     WIKIPEDIA_PAGEVIEWS = "WikipediaPageviews"
     YAHOO_FINANCE = "YahooFinance"
     CLARIFAI = "Clarifai"
+    AHREFS = "Ahrefs"
     CUSTOM = "Custom"
 
 

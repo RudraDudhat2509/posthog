@@ -236,6 +236,7 @@ doesn't conflict with concurrent PRs.
 - adyen
 - agilecrm
 - aha
+- ahrefs
 - airbyte
 - akeneo
 - algolia
