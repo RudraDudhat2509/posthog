@@ -8,8 +8,11 @@
 // reconciles on the next tick.
 //
 // Two signals make master "unhealthy" (folded into one incident):
-//   1. any gating workflow with >= WORKFLOW_FAILURE_STREAK_THRESHOLD consecutive
-//      failures on master — a single workflow broken run after run.
+//   1. any gating workflow that is broken run-after-run (>= WORKFLOW_FAILURE_STREAK_THRESHOLD
+//      consecutive failures) OR has stayed red for >= WORKFLOW_FAILURE_MINUTES_THRESHOLD
+//      minutes — whichever trips first. The wall-clock arm keeps detection fast when commits
+//      land too slowly to stack up a consecutive-failure streak (the count arm alone can take
+//      hours to fire at low commit velocity).
 //   2. >= COMMIT_FAILURE_STREAK_THRESHOLD consecutive red commits across the gating
 //      workflows — rotating-culprit breakage where no single workflow crosses its
 //      own threshold but master is still consistently red.
@@ -231,7 +234,8 @@ function buildAnchorMessage({
     allFailingRunsUrl,
 }) {
     const lines = blocking.map(
-        (wf) => `• ${workflowLink(wf)} — ${plural(wf.consecutive_failures, 'failed run')} in a row`
+        (wf) =>
+            `• ${workflowLink(wf)} — ${plural(wf.consecutive_failures, 'failed run')} in a row · red for ${formatDuration(wf.redForMins)}`
     )
     if (commitActive) {
         lines.push(`• _${plural(commitStreakCount, 'commit')} in a row failed a required check_`)
@@ -306,6 +310,7 @@ module.exports = async ({ context, github, core }, { now: _now, slack: _slack, f
 
     const workflowFiles = (process.env.GATING_WORKFLOWS || '').split(',').filter(Boolean)
     const workflowThreshold = parseInt(process.env.WORKFLOW_FAILURE_STREAK_THRESHOLD || '5', 10)
+    const minutesThreshold = parseInt(process.env.WORKFLOW_FAILURE_MINUTES_THRESHOLD || '20', 10)
     const commitThreshold = parseInt(process.env.COMMIT_FAILURE_STREAK_THRESHOLD || '10', 10)
     // Over-fetch to survive cancelled/skipped runs (force-pushes, concurrency cancels).
     const perPage = Math.max(workflowThreshold * 3, 20)
@@ -332,9 +337,16 @@ module.exports = async ({ context, github, core }, { now: _now, slack: _slack, f
 
     const failing = buildFailingMap(allWorkflowRuns)
     const blocking = Object.values(failing)
-        .filter((f) => f.consecutive_failures >= workflowThreshold)
-        .sort((a, b) => b.consecutive_failures - a.consecutive_failures) // longest streak first
-        .map((b) => ({ ...b, runsUrl: runsUrlFor(owner, repo, b.workflow_file) }))
+        .map((f) => ({
+            ...f,
+            runsUrl: runsUrlFor(owner, repo, f.workflow_file),
+            redForMins: Math.round((now.getTime() - new Date(f.since).getTime()) / 60000),
+        }))
+        // Block on either arm: a consecutive-failure streak, or simply staying red long
+        // enough on the clock. The wall-clock arm fires even when slow commit velocity
+        // means the streak never reaches WORKFLOW_FAILURE_STREAK_THRESHOLD.
+        .filter((f) => f.consecutive_failures >= workflowThreshold || f.redForMins >= minutesThreshold)
+        .sort((a, b) => b.redForMins - a.redForMins) // longest red first
 
     const latestCommit = commits[0] || null
     const { count: commitStreakCount, since: commitStreakSince } = leadingRedStreak(

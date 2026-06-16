@@ -110,6 +110,9 @@ function run(github, { history = [], now = minutes(0), env = {} } = {}) {
         SLACK_CHANNEL: 'C0AS64N6DJL',
         GATING_WORKFLOWS: 'ci-backend.yml,ci-frontend.yml',
         WORKFLOW_FAILURE_STREAK_THRESHOLD: '5',
+        // Reset to the production default every run so a per-test override can't leak
+        // into a later test via the shared process.env.
+        WORKFLOW_FAILURE_MINUTES_THRESHOLD: '20',
         COMMIT_FAILURE_STREAK_THRESHOLD: '10',
         ...env,
     })
@@ -270,6 +273,59 @@ describe('ci-alerts-devex', () => {
         assert.equal(outputs.action, 'none')
         assert.equal(slack.postMessage.calls.length, 0)
         assert.equal(slack.update.calls.length, 0)
+    })
+
+    // A workflow whose newest run failed, parameterized by how long ago the oldest
+    // failure in the leading streak landed (drives the wall-clock arm). The oldest
+    // failure sits `agedMins` back; a green run precedes it so the streak is bounded.
+    const redFor = (agedMins, failCount = 2) =>
+        Array.from({ length: failCount }, (_, i) => ({
+            name: 'Backend CI',
+            conclusion: 'failure',
+            head_sha: `sha_${i}`,
+            html_url: `https://github.com/runs/Backend CI/${i}`,
+            updated_at: minutes(-Math.round((agedMins * i) / (failCount - 1 || 1))).toISOString(),
+        })).concat({
+            name: 'Backend CI',
+            conclusion: 'success',
+            head_sha: 'sha_green',
+            html_url: 'https://github.com/runs/Backend CI/green',
+            updated_at: minutes(-(agedMins + 30)).toISOString(),
+        })
+
+    it('alerts on a workflow red past the minutes threshold, below the streak count', async () => {
+        // Only 2 consecutive failures (< 5), but red for 25m → wall-clock arm trips.
+        const github = createGithubMock({
+            'ci-backend.yml': redFor(25),
+            'ci-frontend.yml': runs('Frontend CI', ['success']),
+        })
+        const { slack, outputs } = await run(github)
+        assert.equal(outputs.action, 'create')
+        const body = JSON.stringify(slack.postMessage.calls[0][0].attachments)
+        assert.match(body, /Backend CI/)
+        assert.match(body, /2 failed runs in a row/)
+        assert.match(body, /red for 25m/)
+    })
+
+    it('stays quiet when red under both the count and the minutes threshold', async () => {
+        // 2 failures, only 9m old → neither arm trips.
+        const github = createGithubMock({
+            'ci-backend.yml': redFor(9),
+            'ci-frontend.yml': runs('Frontend CI', ['success']),
+        })
+        const { slack, outputs } = await run(github)
+        assert.equal(outputs.action, 'none')
+        assert.equal(slack.postMessage.calls.length, 0)
+        assert.equal(slack.update.calls.length, 0)
+    })
+
+    it('honors a custom WORKFLOW_FAILURE_MINUTES_THRESHOLD', async () => {
+        const github = createGithubMock({
+            'ci-backend.yml': redFor(12),
+            'ci-frontend.yml': runs('Frontend CI', ['success']),
+        })
+        const { outputs } = await run(github, { env: { WORKFLOW_FAILURE_MINUTES_THRESHOLD: '10' } })
+        assert.equal(outputs.action, 'create')
     })
 
     describe('formatDuration', () => {
