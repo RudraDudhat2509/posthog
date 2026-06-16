@@ -113,6 +113,67 @@ const createKafkaMessages = async (logData: any[], headers: Record<string, strin
     return Promise.all(logData.map((data) => createKafkaMessage(data, headers)))
 }
 
+// Single Kafka message carrying several log records, so a drop rule can remove some rows while
+// others survive (partial drop) — the path that re-encodes and re-forwards to the output topic.
+const createMultiRecordKafkaMessage = async (
+    logDataList: any[],
+    headers: Record<string, string> = {}
+): Promise<Message> => {
+    const avro = require('avsc')
+    const logRecordType = avro.Type.forSchema({
+        type: 'record',
+        name: 'LogRecord',
+        fields: [
+            { name: 'uuid', type: ['null', 'string'] },
+            { name: 'trace_id', type: ['null', 'bytes'] },
+            { name: 'span_id', type: ['null', 'bytes'] },
+            { name: 'trace_flags', type: ['null', 'int'] },
+            { name: 'timestamp', type: ['null', 'long'] },
+            { name: 'observed_timestamp', type: ['null', 'long'] },
+            { name: 'body', type: ['null', 'string'] },
+            { name: 'severity_text', type: ['null', 'string'] },
+            { name: 'severity_number', type: ['null', 'int'] },
+            { name: 'service_name', type: ['null', 'string'] },
+            { name: 'resource_attributes', type: ['null', { type: 'map', values: 'string' }] },
+            { name: 'instrumentation_scope', type: ['null', 'string'] },
+            { name: 'event_name', type: ['null', 'string'] },
+            { name: 'attributes', type: ['null', { type: 'map', values: 'string' }] },
+        ],
+    })
+
+    const records: LogRecord[] = logDataList.map((logData, i) => ({
+        uuid: `test-uuid-${offsetIncrementer}-${i}`,
+        trace_id: null,
+        span_id: null,
+        trace_flags: null,
+        timestamp: DateTime.now().toMillis() * 1000,
+        observed_timestamp: DateTime.now().toMillis() * 1000,
+        body: JSON.stringify(logData),
+        severity_text: logData.level || 'info',
+        severity_number: 9,
+        service_name: logData.service || 'test-service',
+        resource_attributes: null,
+        instrumentation_scope: null,
+        event_name: null,
+        attributes: null,
+    }))
+
+    const value = await encodeLogRecords(logRecordType, 'zstandard', records)
+
+    return {
+        key: null,
+        value,
+        size: value.length,
+        topic: 'test',
+        offset: offsetIncrementer++,
+        timestamp: DateTime.now().toMillis(),
+        partition: 1,
+        headers: Object.entries(headers).map(([key, value]) => ({
+            [key]: Buffer.from(value),
+        })),
+    }
+}
+
 describe('LogsIngestionConsumer', () => {
     let consumer: LogsIngestionConsumer
     let hub: Hub
@@ -1682,6 +1743,52 @@ describe('LogsIngestionConsumer', () => {
 
                 // The fully-dropped message's 400-byte header is credited; only the kept one bills.
                 expect(teamBytesIngested()).toBe(600)
+            })
+
+            const outputHeaders = (): Record<string, string> | undefined =>
+                getProducedKafkaMessages().find((m) => m.topic === KAFKA_LOGS_CLICKHOUSE)?.headers as
+                    | Record<string, string>
+                    | undefined
+
+            it('shadow mode (default): forwards the original gross size headers on a partial drop', async () => {
+                // One message, two records: the info row is dropped, the error row survives.
+                const message = await createMultiRecordKafkaMessage(
+                    [createLogMessage({ level: 'info' }), createLogMessage({ level: 'error' })],
+                    { token: team.api_token, bytes_uncompressed: '1000', bytes_compressed: '500', record_count: '2' }
+                )
+                await waitForBackgroundTasks(consumer.processKafkaBatch([message]))
+
+                const headers = outputHeaders()
+                expect(headers?.bytes_uncompressed).toBe('1000')
+                expect(headers?.bytes_compressed).toBe('500')
+            })
+
+            it('pro-rates the forwarded size headers by the dropped content fraction when enabled', async () => {
+                await consumer.stop()
+                consumer = await createLogsIngestionConsumer(
+                    hub,
+                    { LOGS_BILLING_PRORATE_ENABLED: true },
+                    { samplingRulesCache: mockSamplingCache as SamplingRulesCache }
+                )
+                await deleteKeysWithPrefix(consumer['redis'], BASE_REDIS_KEY)
+
+                const message = await createMultiRecordKafkaMessage(
+                    [createLogMessage({ level: 'info' }), createLogMessage({ level: 'error' })],
+                    { token: team.api_token, bytes_uncompressed: '1000', bytes_compressed: '500', record_count: '2' }
+                )
+                await waitForBackgroundTasks(consumer.processKafkaBatch([message]))
+
+                // The two rows have equal content, so ~half the bytes are dropped: both headers
+                // scale down by the same fraction, and neither exceeds the original gross value.
+                const headers = outputHeaders()
+                const uncompressed = parseInt(headers!.bytes_uncompressed, 10)
+                const compressed = parseInt(headers!.bytes_compressed, 10)
+                expect(uncompressed).toBeGreaterThan(0)
+                expect(uncompressed).toBeLessThan(1000)
+                expect(compressed).toBeGreaterThan(0)
+                expect(compressed).toBeLessThan(500)
+                // Same dropped fraction applied to both → ratio preserved (500/1000 = 0.5).
+                expect(compressed / uncompressed).toBeCloseTo(0.5, 5)
             })
         })
     })
