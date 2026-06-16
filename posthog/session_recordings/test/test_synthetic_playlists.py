@@ -14,6 +14,7 @@ from posthog.models.sharing_configuration import SharingConfiguration
 from posthog.models.utils import uuid7
 from posthog.session_recordings.models.session_recording_event import SessionRecordingViewed
 from posthog.session_recordings.synthetic_playlists import (
+    ExpiringPlaylistSource,
     FrustrationSignalsPlaylistSource,
     NewUrlsSyntheticPlaylistSource,
 )
@@ -1063,3 +1064,56 @@ class TestFrustrationSignalsSyntheticPlaylist(APIBaseTest):
 
         all_pages = page1 + page2 + page3
         assert len(set(all_pages)) == 5
+
+
+class TestExpiringSyntheticPlaylist(APIBaseTest):
+    """Tests for the expiring soon synthetic playlist count"""
+
+    def setUp(self):
+        super().setUp()
+        from posthog.clickhouse.client import sync_execute
+
+        sync_execute("TRUNCATE TABLE sharded_session_replay_events")
+
+    def _produce_recording(
+        self, session_id: str, started_days_ago: int, retention_period_days: int, is_deleted: bool = False
+    ) -> None:
+        from posthog.session_recordings.queries.test.session_replay_sql import produce_replay_summary
+
+        started_at = now() - timedelta(days=started_days_ago)
+        produce_replay_summary(
+            team_id=self.team.pk,
+            session_id=session_id,
+            distinct_id="user",
+            first_timestamp=started_at,
+            last_timestamp=started_at,
+            retention_period_days=retention_period_days,
+            is_deleted=is_deleted,
+            ensure_analytics_event_in_session=False,
+        )
+
+    @parameterized.expand(
+        [
+            ("expires_within_ten_days", 1, 5, False, 1),
+            ("retention_too_long_to_expire_soon", 1, 30, False, 0),
+            ("deleted_recording_excluded", 1, 5, True, 0),
+            ("started_before_date_window", 10, 5, False, 0),
+        ]
+    )
+    def test_expiring_count(
+        self, _name: str, started_days_ago: int, retention_period_days: int, is_deleted: bool, expected: int
+    ) -> None:
+        self._produce_recording(str(uuid7()), started_days_ago, retention_period_days, is_deleted)
+
+        count = ExpiringPlaylistSource().count_session_ids(self.team, self.user)
+
+        assert count == expected
+
+    def test_expiring_count_sums_distinct_sessions(self) -> None:
+        self._produce_recording(str(uuid7()), started_days_ago=1, retention_period_days=5)
+        self._produce_recording(str(uuid7()), started_days_ago=2, retention_period_days=6)
+        self._produce_recording(str(uuid7()), started_days_ago=1, retention_period_days=30)
+
+        count = ExpiringPlaylistSource().count_session_ids(self.team, self.user)
+
+        assert count == 2

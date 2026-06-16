@@ -17,11 +17,14 @@ import posthoganalytics
 
 from posthog.schema import RecordingOrder, RecordingsQuery
 
-from posthog.clickhouse.client import sync_execute
+from posthog.hogql import ast
+from posthog.hogql.query import execute_hogql_query
+
 from posthog.clickhouse.query_tagging import Feature, Product, tag_queries
 from posthog.models import Comment, Team, User
 from posthog.models.sharing_configuration import SharingConfiguration
 from posthog.session_recordings.models.session_recording_event import SessionRecordingViewed
+from posthog.session_recordings.queries.sub_queries.base_query import SessionRecordingsListingBaseQuery
 from posthog.session_recordings.session_recording_api import list_recordings_from_query
 
 from products.exports.backend.models.exported_asset import ExportedAsset
@@ -268,13 +271,43 @@ class ExpiringPlaylistSource(SyntheticPlaylistSource):
         return self._paginate_list(result, limit, offset)
 
     def count_session_ids(self, team: Team, user: User) -> int:
-        query = RecordingsQuery(limit=10000, order=RecordingOrder.RECORDING_TTL)
-        recordings, _, _, _ = list_recordings_from_query(query, user, team)
-
         now = datetime.now(UTC)
         ten_days_from_now = now + timedelta(days=10)
+        date_range = SessionRecordingsListingBaseQuery(
+            team, RecordingsQuery(order=RecordingOrder.RECORDING_TTL)
+        ).query_date_range
 
-        return sum(1 for r in recordings if r.expiry_time and now <= r.expiry_time <= ten_days_from_now)
+        query = """
+            SELECT count()
+            FROM (
+                SELECT
+                    session_id,
+                    dateTrunc('day', min(min_first_timestamp))
+                        + toIntervalDay(coalesce(max(retention_period_days), 30)) AS expiry_time
+                FROM raw_session_replay_events
+                WHERE min_first_timestamp >= {date_from}
+                    AND min_first_timestamp <= {date_to}
+                GROUP BY session_id
+                HAVING expiry_time >= {now}
+                    AND expiry_time <= {expiry_horizon}
+                    AND max(is_deleted) = 0
+            )
+        """
+
+        tag_queries(product=Product.REPLAY, feature=Feature.QUERY, team_id=team.pk)
+        response = execute_hogql_query(
+            query=query,
+            team=team,
+            query_type="SessionRecordingExpiringSoonCountQuery",
+            placeholders={
+                "date_from": ast.Constant(value=date_range.date_from()),
+                "date_to": ast.Constant(value=date_range.date_to()),
+                "now": ast.Constant(value=now),
+                "expiry_horizon": ast.Constant(value=ten_days_from_now),
+            },
+        )
+
+        return response.results[0][0] if response.results else 0
 
     def to_synthetic_playlist(self) -> "SyntheticPlaylistDefinition":
         return SyntheticPlaylistDefinition(
@@ -322,35 +355,35 @@ class FrustrationSignalsPlaylistSource(SyntheticPlaylistSource):
 
         query = """
             SELECT
-                `$session_id` AS session_id,
+                properties.$session_id AS session_id,
                 countIf(event = '$rageclick') * 3
                     + countIf(event = '$exception') * 2
                     AS frustration_score
             FROM events
             WHERE
-                team_id = %(team_id)s
-                AND event IN ('$rageclick', '$exception')
-                AND timestamp >= %(date_from)s
-                AND timestamp <= %(date_to)s
-                AND notEmpty(`$session_id`)
-            GROUP BY `$session_id`
-            HAVING frustration_score > %(min_frustration_score)s
+                event IN ('$rageclick', '$exception')
+                AND timestamp >= {date_from}
+                AND timestamp <= {date_to}
+                AND notEmpty(properties.$session_id)
+            GROUP BY properties.$session_id
+            HAVING frustration_score > {min_frustration_score}
             ORDER BY frustration_score DESC
             LIMIT 1000
         """
 
         tag_queries(product=Product.REPLAY, feature=Feature.QUERY, team_id=team.pk)
-        result = sync_execute(
-            query,
-            {
-                "team_id": team.pk,
-                "date_from": date_from,
-                "date_to": now_ts,
-                "min_frustration_score": FrustrationSignalsPlaylistSource.MIN_FRUSTRATION_SCORE,
+        response = execute_hogql_query(
+            query=query,
+            team=team,
+            query_type="SessionRecordingFrustrationSignalsQuery",
+            placeholders={
+                "date_from": ast.Constant(value=date_from),
+                "date_to": ast.Constant(value=now_ts),
+                "min_frustration_score": ast.Constant(value=FrustrationSignalsPlaylistSource.MIN_FRUSTRATION_SCORE),
             },
         )
 
-        session_ids = [row[0] for row in result]
+        session_ids = [row[0] for row in response.results or []]
         cache.set(cache_key, session_ids, FrustrationSignalsPlaylistSource.CACHE_TTL)
         return session_ids
 
@@ -495,9 +528,8 @@ class NewUrlsSyntheticPlaylistSource(SyntheticPlaylistSource):
                 session_id,
                 arrayJoin(all_urls) as url,
                 min(min_first_timestamp) as first_seen
-            FROM session_replay_events
-            WHERE team_id = %(team_id)s
-                AND min_first_timestamp >= %(history_start)s
+            FROM raw_session_replay_events
+            WHERE min_first_timestamp >= {history_start}
                 AND url != ''
             GROUP BY session_id, url
             ORDER BY first_seen DESC
@@ -505,13 +537,15 @@ class NewUrlsSyntheticPlaylistSource(SyntheticPlaylistSource):
         """
 
         tag_queries(product=Product.REPLAY, feature=Feature.QUERY, team_id=team.pk)
-        result = sync_execute(
-            query,
-            {
-                "team_id": team.pk,
-                "history_start": history_window_start,
+        response = execute_hogql_query(
+            query=query,
+            team=team,
+            query_type="SessionRecordingNewUrlsQuery",
+            placeholders={
+                "history_start": ast.Constant(value=history_window_start),
             },
         )
+        result = response.results or []
 
         # Build pattern tracking data structures
         pattern_first_seen: dict[str, datetime] = {}
