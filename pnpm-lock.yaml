@@ -349,7 +349,7 @@ importers:
         version: 0.25.12
       jest:
         specifier: ^29.7.0
-        version: 29.7.0(@types/node@25.8.0)(ts-node@10.9.1(@swc/core@1.15.18)(@types/node@25.8.0)(typescript@6.0.3))
+        version: 29.7.0(@types/node@22.18.8)(ts-node@10.9.1(@swc/core@1.15.18)(@types/node@22.18.8)(typescript@6.0.3))
       puppeteer:
         specifier: 19.0.0
         version: 19.0.0(encoding@0.1.13)
@@ -805,9 +805,6 @@ importers:
       '@react-hook/size':
         specifier: ^2.1.2
         version: 2.1.2(react@18.3.1)
-      '@sgratzl/chartjs-chart-boxplot':
-        specifier: ^4.4.5
-        version: 4.4.5(chart.js@4.5.1)
       '@simplewebauthn/browser':
         specifier: ^13.2.2
         version: 13.2.2
@@ -9932,14 +9929,6 @@ packages:
   '@sentry/core@8.55.2':
     resolution: {integrity: sha512-YlEBwybUcOQ/KjMHDmof1vwweVnBtBxYlQp7DE3fOdtW4pqqdHWTnTntQs4VgYfxzjJYgtkd9LHlGtg8qy+JVQ==}
     engines: {node: '>=14.18'}
-
-  '@sgratzl/boxplots@2.0.0':
-    resolution: {integrity: sha512-XHQTNTk0OtDEZyT7v+BKNKt4OEXYhn4GtfI+iQ1eFiFsx8Aq/csz+mOJYbfpkiP8Popd/8Nky8vLh1zzkYn0gw==}
-
-  '@sgratzl/chartjs-chart-boxplot@4.4.5':
-    resolution: {integrity: sha512-hvHcUIPIyzNPRmvPNIbA/R68zZKv7XHUcNrYJZTB8QsVE0KKuuGuEK98yCeCy32vZXQBl/PrHGOYMXeuqZrU0w==}
-    peerDependencies:
-      chart.js: ^4.1.1
 
   '@shikijs/engine-oniguruma@3.23.0':
     resolution: {integrity: sha512-1nWINwKXxKKLqPibT5f4pAFLej9oZzQTsby8942OTlsJzOBZ0MWKiwzMsd+jhzu8YPCHAswGnnN1YtQfirL35g==}
@@ -21463,6 +21452,7 @@ packages:
   tsconfck@3.1.6:
     resolution: {integrity: sha512-ks6Vjr/jEw0P1gmOVwutM3B7fWxoWBL2KRDb1JfqGVawBmO5UsvmWOQFGHBPl5yxYz4eERr19E6L7NMv+Fej4w==}
     engines: {node: ^18 || >=20}
+    deprecated: unmaintained
     hasBin: true
     peerDependencies:
       typescript: 6.0.3
@@ -29946,13 +29936,6 @@ snapshots:
 
   '@sentry/core@8.55.2': {}
 
-  '@sgratzl/boxplots@2.0.0': {}
-
-  '@sgratzl/chartjs-chart-boxplot@4.4.5(chart.js@4.5.1)':
-    dependencies:
-      '@sgratzl/boxplots': 2.0.0
-      chart.js: 4.5.1
-
   '@shikijs/engine-oniguruma@3.23.0':
     dependencies:
       '@shikijs/types': 3.23.0
@@ -30890,7 +30873,7 @@ snapshots:
       '@swc/core': 1.15.18
       '@swc/jest': 0.2.37(@swc/core@1.15.18)
       expect-playwright: 0.8.0
-      jest: 29.7.0(@types/node@22.18.8)(ts-node@10.9.1(@swc/core@1.15.18)(@types/node@22.18.8)(typescript@6.0.3))
+      jest: 29.7.0(@types/node@22.18.8)(ts-node@10.9.1(@swc/core@1.11.4)(@types/node@22.18.8)(typescript@6.0.3))
       jest-circus: 29.7.0
       jest-environment-node: 29.7.0
       jest-junit: 16.0.0
@@ -38451,7 +38434,7 @@ snapshots:
   jest-playwright-preset@4.0.0(jest-circus@29.7.0)(jest-environment-node@29.7.0)(jest-runner@29.7.0)(jest@29.7.0):
     dependencies:
       expect-playwright: 0.8.0
-      jest: 29.7.0(@types/node@22.18.8)(ts-node@10.9.1(@swc/core@1.15.18)(@types/node@22.18.8)(typescript@6.0.3))
+      jest: 29.7.0(@types/node@22.18.8)(ts-node@10.9.1(@swc/core@1.11.4)(@types/node@22.18.8)(typescript@6.0.3))
       jest-circus: 29.7.0
       jest-environment-node: 29.7.0
       jest-process-manager: 0.4.0
@@ -38886,7 +38869,7 @@ snapshots:
     dependencies:
       ansi-escapes: 6.0.0
       chalk: 5.6.2
-      jest: 29.7.0(@types/node@22.18.8)(ts-node@10.9.1(@swc/core@1.15.18)(@types/node@22.18.8)(typescript@6.0.3))
+      jest: 29.7.0(@types/node@22.18.8)(ts-node@10.9.1(@swc/core@1.11.4)(@types/node@22.18.8)(typescript@6.0.3))
       jest-regex-util: 29.6.3
       jest-watcher: 29.7.0
       slash: 5.1.0

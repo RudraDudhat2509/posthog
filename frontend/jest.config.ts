@@ -159,7 +159,6 @@ const config: Config = {
         '^remark-gfm$': '<rootDir>/src/test/mocks/emptyMock.js',
         '^mdast-util-find-and-replace$': '<rootDir>/src/test/mocks/emptyMock.js',
         '^chart\\.js$': '<rootDir>/src/test/insight-testing/chartjs-mock',
-        '@sgratzl/chartjs-chart-boxplot': '<rootDir>/src/test/mocks/emptyMock.js',
         'chartjs-plugin-crosshair': '<rootDir>/src/test/mocks/emptyMock.js',
         'chartjs-plugin-annotation': '<rootDir>/src/test/mocks/chartjsPluginMock.js',
         'chartjs-plugin-datalabels': '<rootDir>/src/test/mocks/chartjsPluginMock.js',
