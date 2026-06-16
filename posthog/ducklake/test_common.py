@@ -1,10 +1,46 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
+from django.test import override_settings
+
 import duckdb
 from parameterized import parameterized
 
-from posthog.ducklake.common import initialize_ducklake, is_version_mismatch, reset_ducklake_catalog
+from posthog.ducklake.common import (
+    get_managed_warehouse_storage,
+    initialize_ducklake,
+    is_version_mismatch,
+    reset_ducklake_catalog,
+)
+
+
+class TestGetManagedWarehouseStorage:
+    @override_settings(DUCKGRES_API_URL="http://duckgres:8080", DUCKGRES_INTERNAL_SECRET="secret")
+    @patch("posthog.security.outbound_proxy.internal_requests")
+    def test_returns_bucket_and_region(self, mock_requests: MagicMock):
+        resp = MagicMock()
+        resp.json.return_value = {"data_store": {"bucket_name": "bkt", "region": "us-west-2"}}
+        mock_requests.get.return_value = resp
+
+        assert get_managed_warehouse_storage("org-1") == ("bkt", "us-west-2")
+        url = mock_requests.get.call_args[0][0]
+        assert url == "http://duckgres:8080/api/v1/orgs/org-1/warehouse"
+        assert mock_requests.get.call_args.kwargs["headers"]["X-Duckgres-Internal-Secret"] == "secret"
+
+    @override_settings(DUCKGRES_API_URL="http://duckgres:8080", DUCKGRES_INTERNAL_SECRET="secret")
+    @patch("posthog.security.outbound_proxy.internal_requests")
+    def test_returns_none_when_bucket_not_ready(self, mock_requests: MagicMock):
+        resp = MagicMock()
+        resp.json.return_value = {"state": "provisioning", "data_store": {}}
+        mock_requests.get.return_value = resp
+
+        assert get_managed_warehouse_storage("org-1") == (None, None)
+
+    @override_settings(DUCKGRES_API_URL=None)
+    def test_raises_when_not_configured(self):
+        with pytest.raises(ValueError, match="DUCKGRES_API_URL"):
+            get_managed_warehouse_storage("org-1")
+
 
 TEST_CONFIG = {
     "DUCKLAKE_RDS_HOST": "localhost",

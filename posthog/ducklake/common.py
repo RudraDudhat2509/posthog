@@ -237,6 +237,30 @@ def get_duckgres_server_for_organization(organization_id: str) -> DuckgresServer
         return None
 
 
+def get_managed_warehouse_storage(organization_id: str) -> tuple[str | None, str | None]:
+    """Read the org's managed-warehouse S3 bucket and region from the duckgres admin API.
+
+    Returns (bucket_name, region). duckgres provisions the bucket dynamically and reports its
+    name back in the warehouse record only once the S3 component is ready, so this can return
+    (None, None) while provisioning is still in progress.
+    """
+    from django.conf import settings
+
+    from posthog.security.outbound_proxy import internal_requests
+
+    base_url = getattr(settings, "DUCKGRES_API_URL", None)
+    if not base_url:
+        raise ValueError("DUCKGRES_API_URL is not configured")
+    token = getattr(settings, "DUCKGRES_INTERNAL_SECRET", None)
+    headers = {"X-Duckgres-Internal-Secret": token} if token else {}
+
+    url = f"{base_url.rstrip('/')}/api/v1/orgs/{organization_id}/warehouse"
+    resp = internal_requests.get(url, headers=headers, timeout=30)
+    resp.raise_for_status()
+    data_store = (resp.json() or {}).get("data_store") or {}
+    return data_store.get("bucket_name"), data_store.get("region")
+
+
 def get_duckgres_server_for_team(team_id: int) -> DuckgresServer | None:
     """Look up DuckgresServer for a team.
 

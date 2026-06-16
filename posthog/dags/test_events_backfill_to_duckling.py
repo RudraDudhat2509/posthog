@@ -19,7 +19,9 @@ from posthog.dags.events_backfill_to_duckling import (
     PERSONS_COLUMNS,
     PERSONS_CONCURRENCY_TAG,
     PERSONS_TABLE_DDL,
+    DucklingTarget,
     _get_cluster,
+    _resolve_duckling_target,
     _set_table_partitioning,
     _validate_identifier,
     duckling_events_full_backfill_sensor,
@@ -30,6 +32,38 @@ from posthog.dags.events_backfill_to_duckling import (
     parse_partition_key_dates,
     table_exists,
 )
+
+
+class TestResolveDucklingTarget:
+    def _server(self, org_id: str = "org-1", host: str = "h", port: int = 5432) -> MagicMock:
+        server = MagicMock()
+        server.organization_id = org_id
+        server.host = host
+        server.port = port
+        return server
+
+    @patch("posthog.dags.events_backfill_to_duckling.get_managed_warehouse_storage", return_value=("bkt", "us-west-2"))
+    @patch("posthog.dags.events_backfill_to_duckling.get_duckgres_server_by_team_org")
+    def test_builds_target_from_server_and_api_bucket(self, mock_server: MagicMock, mock_storage: MagicMock):
+        mock_server.return_value = self._server(org_id="org-1")
+
+        target, server = _resolve_duckling_target(7)
+
+        assert target == DucklingTarget(team_id=7, organization_id="org-1", bucket="bkt", bucket_region="us-west-2")
+        assert server is mock_server.return_value
+        mock_storage.assert_called_once_with("org-1")
+
+    @patch("posthog.dags.events_backfill_to_duckling.get_duckgres_server_by_team_org", return_value=None)
+    def test_raises_without_server(self, _mock_server: MagicMock):
+        with pytest.raises(ValueError, match="No DuckgresServer"):
+            _resolve_duckling_target(7)
+
+    @patch("posthog.dags.events_backfill_to_duckling.get_managed_warehouse_storage", return_value=(None, None))
+    @patch("posthog.dags.events_backfill_to_duckling.get_duckgres_server_by_team_org")
+    def test_raises_when_bucket_not_ready(self, mock_server: MagicMock, _mock_storage: MagicMock):
+        mock_server.return_value = self._server()
+        with pytest.raises(ValueError, match="no S3 bucket"):
+            _resolve_duckling_target(7)
 
 
 class TestParsePartitionKey:
