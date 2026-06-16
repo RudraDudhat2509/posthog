@@ -9,7 +9,7 @@ from django.utils.timezone import now
 from parameterized import parameterized
 from rest_framework import status
 
-from posthog.models import Comment, SessionRecordingPlaylist
+from posthog.models import Comment, SessionRecordingPlaylist, Team
 from posthog.models.sharing_configuration import SharingConfiguration
 from posthog.models.utils import uuid7
 from posthog.session_recordings.models.session_recording_event import SessionRecordingViewed
@@ -1126,9 +1126,9 @@ class TestExpiringSyntheticPlaylist(APIBaseTest):
         assert count == 2
 
     def test_expiring_count_is_team_scoped(self) -> None:
+        other_team = Team.objects.create(organization=self.organization)
         self._produce_recording(str(uuid7()), started_days_ago=1, retention_period_days=5)
-        self._produce_recording(str(uuid7()), started_days_ago=1, retention_period_days=5, team_id=self.team.pk + 1)
+        self._produce_recording(str(uuid7()), started_days_ago=1, retention_period_days=5, team_id=other_team.pk)
 
-        count = ExpiringPlaylistSource().count_session_ids(self.team, self.user)
-
-        assert count == 1
+        assert ExpiringPlaylistSource().count_session_ids(self.team, self.user) == 1
+        assert ExpiringPlaylistSource().count_session_ids(other_team, self.user) == 1
