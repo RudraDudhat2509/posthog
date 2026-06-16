@@ -28,7 +28,8 @@ export function StepBars({ step, stepIndex, showPersonsModal }: Omit<StepBarProp
             </div>
             {step.nested_breakdown?.map((series) => (
                 <StepBar
-                    key={`bar-${stepIndex}-${series.order}`}
+                    // Compare bars share the step's `order`, so key on the period instead to keep them distinct.
+                    key={`bar-${stepIndex}-${series.compare_label ?? series.order}`}
                     step={step}
                     stepIndex={stepIndex}
                     series={series}
