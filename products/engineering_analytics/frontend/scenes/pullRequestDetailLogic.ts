@@ -1,6 +1,5 @@
 import { afterMount, kea, key, path, props, reducers, selectors } from 'kea'
 import { loaders } from 'kea-loaders'
-import { router } from 'kea-router'
 
 import { ApiConfig } from 'lib/api'
 import { urls } from 'scenes/urls'
@@ -18,6 +17,8 @@ export interface PullRequestDetailLogicProps {
     repoOwner: string
     repoName: string
     number: number
+    // Which GitHub source the list was scoped to, threaded from `?source=` via paramsToProps.
+    sourceId: string | null
     tabId?: string
 }
 
@@ -31,7 +32,11 @@ export function sortRunsForTriage(runs: WorkflowRun[]): WorkflowRun[] {
 export const pullRequestDetailLogic = kea<pullRequestDetailLogicType>([
     path(['products', 'engineering_analytics', 'frontend', 'scenes', 'pullRequestDetailLogic']),
     props({} as PullRequestDetailLogicProps),
-    key((props) => `${props.tabId ?? 'default'}/${props.repoOwner}/${props.repoName}#${props.number}`),
+    // sourceId is part of the identity: the same PR number can resolve to a different source.
+    key(
+        (props) =>
+            `${props.tabId ?? 'default'}/${props.repoOwner}/${props.repoName}#${props.number}@${props.sourceId ?? ''}`
+    ),
 
     loaders(({ props }) => ({
         lifecycle: [
@@ -41,8 +46,7 @@ export const pullRequestDetailLogic = kea<pullRequestDetailLogicType>([
                     await engineeringAnalyticsPrLifecycle(projectId(), {
                         pr_number: props.number,
                         repo: `${props.repoOwner}/${props.repoName}`,
-                        // Read the same source the list was scoped to (carried in `?source=`).
-                        source_id: router.values.searchParams.source ?? undefined,
+                        source_id: props.sourceId ?? undefined,
                     }),
             },
         ],

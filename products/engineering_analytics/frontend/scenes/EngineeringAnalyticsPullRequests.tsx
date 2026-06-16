@@ -47,6 +47,7 @@ export function EngineeringAnalyticsPullRequests(): JSX.Element {
         repoOptions,
         hasActiveFilters,
         activeCard,
+        sourceId,
     } = useValues(engineeringAnalyticsLogic)
     const { setStateFilter, setAuthor, setRepo, setCiStatusFilter, setSearch, resetFilters, applyCardFilter } =
         useActions(engineeringAnalyticsLogic)
@@ -225,10 +226,9 @@ export function EngineeringAnalyticsPullRequests(): JSX.Element {
                 loading={pullRequestsLoading}
                 onRow={(row) => {
                     // Carry the selected source so the PR's detail page reads the same one.
-                    const source = router.values.searchParams.source
                     const detailUrl = combineUrl(
                         urls.engineeringAnalyticsPullRequest(row.repoOwner, row.repoName, row.number),
-                        source ? { source } : {}
+                        sourceId ? { source: sourceId } : {}
                     ).url
                     return {
                         // Inner links (PR title → GitHub) keep their own behavior.

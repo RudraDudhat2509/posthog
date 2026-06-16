@@ -402,12 +402,8 @@ export const engineeringAnalyticsLogic: LogicWrapper<engineeringAnalyticsLogicTy
                 actions.loadPullRequests()
                 actions.loadWorkflowHealth()
             },
-            // Re-read every panel against the newly selected source (the cards/list/health are all per-source).
-            setSourceId: () => {
-                actions.loadCards()
-                actions.loadPullRequests()
-                actions.loadWorkflowHealth()
-            },
+            // Cards, the PR list, and workflow health are all per-source — reload them all.
+            setSourceId: () => actions.refresh(),
             setWorkflowDateRange: () => {
                 actions.loadWorkflowHealth()
             },
@@ -448,8 +444,6 @@ export const engineeringAnalyticsLogic: LogicWrapper<engineeringAnalyticsLogicTy
 
         afterMount(({ actions }) => {
             actions.loadGithubSources()
-            actions.loadCards()
-            actions.loadPullRequests()
-            actions.loadWorkflowHealth()
+            actions.refresh()
         }),
     ])
