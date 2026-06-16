@@ -259,20 +259,22 @@ class SummarisedPlaylistSource(SyntheticPlaylistSource):
 
 @dataclass
 class ExpiringPlaylistSource(SyntheticPlaylistSource):
+    EXPIRY_HORIZON_DAYS = 10
+
     def get_session_ids(self, team: Team, user: User, limit: int | None = None, offset: int | None = None) -> list[str]:
         fetch_limit = ((offset or 0) + (limit or 50)) * 2
         query = RecordingsQuery(limit=fetch_limit, order=RecordingOrder.RECORDING_TTL)
         recordings, _, _, _ = list_recordings_from_query(query, user, team)
 
         now = datetime.now(UTC)
-        ten_days_from_now = now + timedelta(days=10)
+        expiry_horizon = now + timedelta(days=ExpiringPlaylistSource.EXPIRY_HORIZON_DAYS)
 
-        result = [r.session_id for r in recordings if r.expiry_time and now <= r.expiry_time <= ten_days_from_now]
+        result = [r.session_id for r in recordings if r.expiry_time and now <= r.expiry_time <= expiry_horizon]
         return self._paginate_list(result, limit, offset)
 
     def count_session_ids(self, team: Team, user: User) -> int:
         now = datetime.now(UTC)
-        ten_days_from_now = now + timedelta(days=10)
+        expiry_horizon = now + timedelta(days=ExpiringPlaylistSource.EXPIRY_HORIZON_DAYS)
         date_range = SessionRecordingsListingBaseQuery(
             team, RecordingsQuery(order=RecordingOrder.RECORDING_TTL)
         ).query_date_range
@@ -303,7 +305,7 @@ class ExpiringPlaylistSource(SyntheticPlaylistSource):
                 "date_from": ast.Constant(value=date_range.date_from()),
                 "date_to": ast.Constant(value=date_range.date_to()),
                 "now": ast.Constant(value=now),
-                "expiry_horizon": ast.Constant(value=ten_days_from_now),
+                "expiry_horizon": ast.Constant(value=expiry_horizon),
             },
         )
 
@@ -314,7 +316,7 @@ class ExpiringPlaylistSource(SyntheticPlaylistSource):
             id=-6,
             short_id="synthetic-expiring",
             name="Expiring soon",
-            description="Recordings that will expire in the next 10 days",
+            description=f"Recordings that will expire in the next {ExpiringPlaylistSource.EXPIRY_HORIZON_DAYS} days",
             type="collection",
             get_session_ids=self.get_session_ids,
             count_session_ids=self.count_session_ids,
