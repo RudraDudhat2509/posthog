@@ -179,10 +179,25 @@ class MySQLSource(SQLSource[MySQLSourceConfig], SSHTunnelMixin, ValidateDatabase
                 or f"Could not connect to {self.get_source_config.name} via the SSH tunnel. Please check all connection details are valid.",
             )
         except Exception as e:
-            capture_exception(e)
+            # A connection-refused / "can't connect", access-denied, bad-handshake and the like are
+            # expected user/upstream failures (server down, wrong host/port, firewall, bad password) —
+            # surfacing the friendly message below is exactly what this method exists to do, so don't
+            # also page us by capturing them as exceptions. Anything we haven't already classified as
+            # user-recoverable still gets captured, so genuine bugs in our connection code stay visible.
+            if not self._is_known_user_error(e):
+                capture_exception(e)
             return (
                 False,
                 f"Could not connect to {self.get_source_config.name}. Please check all connection details are valid.",
             )
 
         return True, None
+
+    def _is_known_user_error(self, error: Exception) -> bool:
+        """True when the error matches a pattern we've already classified as user/upstream.
+
+        Reuses `get_non_retryable_errors` so credential validation and the import pipeline agree on
+        what counts as a user-recoverable failure rather than an unexpected bug worth capturing.
+        """
+        message = str(error)
+        return any(pattern in message for pattern in self.get_non_retryable_errors())

@@ -543,6 +543,47 @@ class TestSafetyContract:
         assert _sanitize_identifier(ident).startswith("`")
 
 
+class TestValidateCredentialsCapture:
+    """`validate_credentials` returns a friendly message for unreachable/misconfigured servers — it
+    must not also flood error tracking with these expected user/upstream failures."""
+
+    @pytest.fixture
+    def source(self, mocker):
+        src = MySQLSource()
+        mocker.patch.object(src, "ssh_tunnel_is_valid", return_value=(True, None))
+        mocker.patch.object(src, "is_database_host_valid", return_value=(True, None))
+        return src
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            pymysql.err.OperationalError(
+                2003, "Can't connect to MySQL server on 'db.example.com' ([Errno 111] Connection refused)"
+            ),
+            pymysql.err.OperationalError(1045, "Access denied for user 'u'@'1.2.3.4' (using password: YES)"),
+            pymysql.err.OperationalError(1129, "Host '1.2.3.4' is blocked because of many connection errors"),
+        ],
+    )
+    def test_does_not_capture_known_user_errors(self, source, error, mocker):
+        mocker.patch.object(source, "get_schemas", side_effect=error)
+        capture = mocker.patch("posthog.temporal.data_imports.sources.mysql.source.capture_exception")
+
+        valid, message = source.validate_credentials(_make_config(), team_id=1)
+
+        assert valid is False
+        assert message is not None
+        capture.assert_not_called()
+
+    def test_captures_unexpected_errors(self, source, mocker):
+        mocker.patch.object(source, "get_schemas", side_effect=RuntimeError("totally unexpected boom"))
+        capture = mocker.patch("posthog.temporal.data_imports.sources.mysql.source.capture_exception")
+
+        valid, message = source.validate_credentials(_make_config(), team_id=1)
+
+        assert valid is False
+        capture.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # End-to-end build_pipeline — wired through MySQLImplementation
 # ---------------------------------------------------------------------------
