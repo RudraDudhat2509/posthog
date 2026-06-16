@@ -21,13 +21,11 @@ import { alignResolvedDateRangeToInterval, formatResolvedDateRange } from 'lib/u
 import { funnelDataLogic } from 'scenes/funnels/funnelDataLogic'
 import { axisLabel } from 'scenes/insights/aggregationAxisFormat'
 import { AxisLabelsFilter } from 'scenes/insights/EditorFilters/AxisLabelsFilter'
-import { BoldNumberShowComparisonPillFilter } from 'scenes/insights/EditorFilters/BoldNumberShowComparisonPillFilter'
-import { BoldNumberShowSparklineFilter } from 'scenes/insights/EditorFilters/BoldNumberShowSparklineFilter'
-import { BoldNumberShowTitleFilter } from 'scenes/insights/EditorFilters/BoldNumberShowTitleFilter'
 import { HideIncompleteConversionWindowPeriodsFilter } from 'scenes/insights/EditorFilters/HideIncompleteConversionWindowPeriodsFilter'
 import { HideWeekendsFilter } from 'scenes/insights/EditorFilters/HideWeekendsFilter'
 import { LifecyclePercentagesFilter } from 'scenes/insights/EditorFilters/LifecyclePercentagesFilter'
 import { LifecycleStackingFilter } from 'scenes/insights/EditorFilters/LifecycleStackingFilter'
+import { MetricGoodDirectionFilter, MetricShowChangeFilter } from 'scenes/insights/EditorFilters/MetricFilters'
 import { PercentStackViewFilter } from 'scenes/insights/EditorFilters/PercentStackViewFilter'
 import { ResultCustomizationByPicker } from 'scenes/insights/EditorFilters/ResultCustomizationByPicker'
 import { ScalePicker } from 'scenes/insights/EditorFilters/ScalePicker'
@@ -120,11 +118,18 @@ export function InsightDisplayConfig(): JSX.Element {
     const hideWeekendsEnabled = !!featureFlags[FEATURE_FLAGS.PRODUCT_ANALYTICS_HIDE_WEEKENDS]
 
     const funnelsCompareEnabled = !!featureFlags[FEATURE_FLAGS.PRODUCT_ANALYTICS_FUNNELS_COMPARE]
+
+    // Metric shows a single headline value plus a sparkline; like the non-time-series displays it has no
+    // axes/scale/lines, so it hides the continuous-chart display options even though its data is time-series.
+    const isMetric = display === ChartDisplayType.Metric
+    const hideContinuousChartOptions = isNonTimeSeriesDisplay || isMetric
     const showCompare =
         (isTrends &&
             display !== ChartDisplayType.ActionsAreaGraph &&
             display !== ChartDisplayType.CalendarHeatmap &&
-            display !== ChartDisplayType.BoxPlot) ||
+            display !== ChartDisplayType.BoxPlot &&
+            // Metric computes its change pill from its own series, so the compare-to-previous control isn't needed.
+            !isMetric) ||
         isStickiness ||
         isWebAnalyticsInsightQuery(querySource) ||
         (funnelsCompareEnabled && isTrendsFunnel)
@@ -138,9 +143,9 @@ export function InsightDisplayConfig(): JSX.Element {
         (!display || display === ChartDisplayType.ActionsLineGraph || display === ChartDisplayType.ActionsAreaGraph) &&
         !!interval &&
         (smoothingOptions[interval]?.length ?? 0) > 0
-    const showMultipleYAxesConfig = (isTrends || isStickiness) && !isNonTimeSeriesDisplay
-    const showAlertThresholdLinesConfig = isTrends && !isNonTimeSeriesDisplay
-    const showAnnotationsConfig = (isTrends && !isNonTimeSeriesDisplay) || isTrendsFunnel
+    const showMultipleYAxesConfig = (isTrends || isStickiness) && !hideContinuousChartOptions
+    const showAlertThresholdLinesConfig = isTrends && !hideContinuousChartOptions
+    const showAnnotationsConfig = (isTrends && !hideContinuousChartOptions) || isTrendsFunnel
     const isLineDisplay = isDefaultTrendsLineDisplay(display, querySource) || displayMatches(display, LINE_DISPLAYS)
     const isBarDisplay = displayMatches(display, BAR_DISPLAYS)
     const isCumulativeLineDisplay = display === ChartDisplayType.ActionsLineGraphCumulative
@@ -162,7 +167,6 @@ export function InsightDisplayConfig(): JSX.Element {
     } = useValues(trendsDataLogic(insightProps))
 
     const isBoxPlot = display === ChartDisplayType.BoxPlot
-    const isBoldNumber = display === ChartDisplayType.BoldNumber
     const advancedOptions: LemonMenuItems = [
         ...(showSmoothing
             ? [
@@ -224,6 +228,12 @@ export function InsightDisplayConfig(): JSX.Element {
                                 },
                             ]
                           : [
+                                ...(isMetric
+                                    ? [
+                                          { label: () => <MetricGoodDirectionFilter /> },
+                                          { label: () => <MetricShowChangeFilter /> },
+                                      ]
+                                    : []),
                                 ...(isLifecycle ? [{ label: () => <LifecycleStackingFilter /> }] : []),
                                 ...(supportsValueOnSeries ? [{ label: () => <ValueOnSeriesFilter /> }] : []),
                                 ...(isLifecycle ? [{ label: () => <LifecyclePercentagesFilter /> }] : []),
@@ -240,23 +250,16 @@ export function InsightDisplayConfig(): JSX.Element {
                                       ]
                                     : []),
                                 ...(showMultipleYAxesConfig ? [{ label: () => <ShowMultipleYAxesFilter /> }] : []),
-                                ...((isTrends || isRetention || isTrendsFunnel) && !isNonTimeSeriesDisplay
+                                ...((isTrends || isRetention || isTrendsFunnel) && !hideContinuousChartOptions
                                     ? [{ label: () => <ShowTrendLinesFilter /> }]
                                     : []),
-                                ...(isTrendsFunnel && !isNonTimeSeriesDisplay
+                                ...(isTrendsFunnel && !hideContinuousChartOptions
                                     ? [{ label: () => <HideIncompleteConversionWindowPeriodsFilter /> }]
                                     : []),
-                                ...(isTrends && !isNonTimeSeriesDisplay && hideWeekendsEnabled
+                                ...(isTrends && !hideContinuousChartOptions && hideWeekendsEnabled
                                     ? [{ label: () => <HideWeekendsFilter /> }]
                                     : []),
                                 ...(showAnnotationsConfig ? [{ label: () => <ShowAnnotationsFilter /> }] : []),
-                                ...(isBoldNumber
-                                    ? [
-                                          { label: () => <BoldNumberShowTitleFilter /> },
-                                          { label: () => <BoldNumberShowSparklineFilter /> },
-                                          { label: () => <BoldNumberShowComparisonPillFilter /> },
-                                      ]
-                                    : []),
                             ],
                   },
               ]
@@ -286,7 +289,7 @@ export function InsightDisplayConfig(): JSX.Element {
                   },
               ]
             : []),
-        ...(!isNonTimeSeriesDisplay && isTrends && display !== ChartDisplayType.CalendarHeatmap
+        ...(!hideContinuousChartOptions && isTrends && display !== ChartDisplayType.CalendarHeatmap
             ? [
                   {
                       title: 'Y-axis scale',
@@ -425,9 +428,8 @@ export function InsightDisplayConfig(): JSX.Element {
         (showMultipleYAxes ? 1 : 0) +
         (trendsFilter?.hideWeekends && hideWeekendsEnabled ? 1 : 0) +
         (showAnnotationsConfig && showAnnotations === false ? 1 : 0) +
-        (isBoldNumber && trendsFilter?.boldNumberShowTitle ? 1 : 0) +
-        (isBoldNumber && trendsFilter?.boldNumberShowSparkline ? 1 : 0) +
-        (isBoldNumber && trendsFilter?.boldNumberShowComparisonPill ? 1 : 0)
+        (isMetric && (trendsFilter?.metricGoodDirection ?? 'up') !== 'up' ? 1 : 0) +
+        (isMetric && trendsFilter?.metricShowChange === false ? 1 : 0)
 
     return (
         <div

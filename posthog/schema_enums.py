@@ -429,6 +429,7 @@ class Display(StrEnum):
     ACTIONS_AREA_GRAPH = "ActionsAreaGraph"
     ACTIONS_LINE_GRAPH_CUMULATIVE = "ActionsLineGraphCumulative"
     BOLD_NUMBER = "BoldNumber"
+    METRIC = "Metric"
     ACTIONS_PIE = "ActionsPie"
     ACTIONS_BAR_VALUE = "ActionsBarValue"
     ACTIONS_TABLE = "ActionsTable"
@@ -559,6 +560,7 @@ class ChartDisplayType(StrEnum):
     ACTIONS_AREA_GRAPH = "ActionsAreaGraph"
     ACTIONS_LINE_GRAPH_CUMULATIVE = "ActionsLineGraphCumulative"
     BOLD_NUMBER = "BoldNumber"
+    METRIC = "Metric"
     ACTIONS_PIE = "ActionsPie"
     ACTIONS_BAR_VALUE = "ActionsBarValue"
     ACTIONS_TABLE = "ActionsTable"
@@ -2834,6 +2836,11 @@ class DetailedResultsAggregationType(StrEnum):
     TOTAL = "total"
     AVERAGE = "average"
     MEDIAN = "median"
+
+
+class MetricGoodDirection(StrEnum):
+    UP = "up"
+    DOWN = "down"
 
 
 class UsageMetricDisplay(StrEnum):
