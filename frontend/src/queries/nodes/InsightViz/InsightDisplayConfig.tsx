@@ -116,23 +116,29 @@ export function InsightDisplayConfig(): JSX.Element {
     )
     const { featureFlags } = useValues(featureFlagLogic)
     const hideWeekendsEnabled = !!featureFlags[FEATURE_FLAGS.PRODUCT_ANALYTICS_HIDE_WEEKENDS]
+    // The slope graph shows the first vs last interval, so it keeps the group-by interval picker but
+    // drops the options that need the points between them (compare, smoothing, multiple axes,
+    // alert/annotation overlays, statistical analysis).
+    const isSlopeGraph = display === ChartDisplayType.SlopeGraph
 
     const funnelsCompareEnabled = !!featureFlags[FEATURE_FLAGS.PRODUCT_ANALYTICS_FUNNELS_COMPARE]
 
-    // Metric shows a single headline value plus a sparkline; like the non-time-series displays it has no
-    // axes/scale/lines, so it hides the continuous-chart display options even though its data is time-series.
+    // Metric (single value + sparkline) and slope graph (two endpoints) have no continuous axes/scale/lines, so
+    // like the non-time-series displays they hide the continuous-chart options even though their data is time-series.
     const isMetric = display === ChartDisplayType.Metric
-    const hideContinuousChartOptions = isNonTimeSeriesDisplay || isMetric
+    const hideContinuousChartOptions = isNonTimeSeriesDisplay || isMetric || isSlopeGraph
     const showCompare =
         (isTrends &&
             display !== ChartDisplayType.ActionsAreaGraph &&
             display !== ChartDisplayType.CalendarHeatmap &&
             display !== ChartDisplayType.BoxPlot &&
-            // Metric computes its change pill from its own series, so the compare-to-previous control isn't needed.
-            !isMetric) ||
+            // Metric derives its change pill from its own series and slope graph plots two fixed endpoints, so
+            // neither needs the compare-to-previous control.
+            !isMetric &&
+            !isSlopeGraph) ||
         isStickiness ||
         isWebAnalyticsInsightQuery(querySource) ||
-        (funnelsCompareEnabled && isTrendsFunnel)
+        (funnelsCompareEnabled && (isTrendsFunnel || isTimeToConvertFunnel))
     const showInterval =
         isTrendsFunnel ||
         isLifecycle ||
@@ -227,40 +233,48 @@ export function InsightDisplayConfig(): JSX.Element {
                                     ),
                                 },
                             ]
-                          : [
-                                ...(isMetric
-                                    ? [
-                                          { label: () => <MetricGoodDirectionFilter /> },
-                                          { label: () => <MetricShowChangeFilter /> },
-                                      ]
-                                    : []),
-                                ...(isLifecycle ? [{ label: () => <LifecycleStackingFilter /> }] : []),
-                                ...(supportsValueOnSeries ? [{ label: () => <ValueOnSeriesFilter /> }] : []),
-                                ...(isLifecycle ? [{ label: () => <LifecyclePercentagesFilter /> }] : []),
-                                ...(supportsPercentStackView ? [{ label: () => <PercentStackViewFilter /> }] : []),
-                                ...(supportsBarValueStacking ? [{ label: () => <StackBreakdownFilter /> }] : []),
-                                ...(hasLegend || showFunnelLegendConfig ? [{ label: () => <ShowLegendFilter /> }] : []),
-                                ...(display === ChartDisplayType.ActionsPie
-                                    ? [{ label: () => <ShowPieTotalFilter /> }]
-                                    : []),
-                                ...(showAlertThresholdLinesConfig
-                                    ? [
-                                          { label: () => <ShowAlertThresholdLinesFilter /> },
-                                          { label: () => <ShowAlertAnomalyPointsFilter /> },
-                                      ]
-                                    : []),
-                                ...(showMultipleYAxesConfig ? [{ label: () => <ShowMultipleYAxesFilter /> }] : []),
-                                ...((isTrends || isRetention || isTrendsFunnel) && !hideContinuousChartOptions
-                                    ? [{ label: () => <ShowTrendLinesFilter /> }]
-                                    : []),
-                                ...(isTrendsFunnel && !hideContinuousChartOptions
-                                    ? [{ label: () => <HideIncompleteConversionWindowPeriodsFilter /> }]
-                                    : []),
-                                ...(isTrends && !hideContinuousChartOptions && hideWeekendsEnabled
-                                    ? [{ label: () => <HideWeekendsFilter /> }]
-                                    : []),
-                                ...(showAnnotationsConfig ? [{ label: () => <ShowAnnotationsFilter /> }] : []),
-                            ],
+                          : isSlopeGraph
+                            ? // A slope only shows the first vs last interval of each series — the
+                              // legend (when there are multiple series) is the only display option that applies.
+                              hasLegend
+                                ? [{ label: () => <ShowLegendFilter /> }]
+                                : []
+                            : [
+                                  ...(isMetric
+                                      ? [
+                                            { label: () => <MetricGoodDirectionFilter /> },
+                                            { label: () => <MetricShowChangeFilter /> },
+                                        ]
+                                      : []),
+                                  ...(isLifecycle ? [{ label: () => <LifecycleStackingFilter /> }] : []),
+                                  ...(supportsValueOnSeries ? [{ label: () => <ValueOnSeriesFilter /> }] : []),
+                                  ...(isLifecycle ? [{ label: () => <LifecyclePercentagesFilter /> }] : []),
+                                  ...(supportsPercentStackView ? [{ label: () => <PercentStackViewFilter /> }] : []),
+                                  ...(supportsBarValueStacking ? [{ label: () => <StackBreakdownFilter /> }] : []),
+                                  ...(hasLegend || showFunnelLegendConfig
+                                      ? [{ label: () => <ShowLegendFilter /> }]
+                                      : []),
+                                  ...(display === ChartDisplayType.ActionsPie
+                                      ? [{ label: () => <ShowPieTotalFilter /> }]
+                                      : []),
+                                  ...(showAlertThresholdLinesConfig
+                                      ? [
+                                            { label: () => <ShowAlertThresholdLinesFilter /> },
+                                            { label: () => <ShowAlertAnomalyPointsFilter /> },
+                                        ]
+                                      : []),
+                                  ...(showMultipleYAxesConfig ? [{ label: () => <ShowMultipleYAxesFilter /> }] : []),
+                                  ...((isTrends || isRetention || isTrendsFunnel) && !hideContinuousChartOptions
+                                      ? [{ label: () => <ShowTrendLinesFilter /> }]
+                                      : []),
+                                  ...(isTrendsFunnel && !hideContinuousChartOptions
+                                      ? [{ label: () => <HideIncompleteConversionWindowPeriodsFilter /> }]
+                                      : []),
+                                  ...(isTrends && !hideContinuousChartOptions && hideWeekendsEnabled
+                                      ? [{ label: () => <HideWeekendsFilter /> }]
+                                      : []),
+                                  ...(showAnnotationsConfig ? [{ label: () => <ShowAnnotationsFilter /> }] : []),
+                              ],
                   },
               ]
             : []),
