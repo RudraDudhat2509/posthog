@@ -805,7 +805,7 @@ export function MenuFilterCombobox({
         })
         setActiveChip('all')
         inputRef.current?.focus()
-    }, [activeChip, inputRef.current])
+    }, [activeChip])
 
     const selectionContextFor = useCallback(
         (entry: MenuFilterEntry): CommitSelectionContext => {
