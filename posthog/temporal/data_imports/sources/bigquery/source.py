@@ -60,6 +60,10 @@ class BigQuerySource(SQLSource[BigQuerySourceConfig]):
             # customer's service account — retrying can't resolve them; the user must grant the
             # missing permission (or the referenced table/dataset must exist).
             "Access Denied:": "BigQuery denied access to a table or dataset. Please ensure your service account has read access (the bigquery.tables.getData permission, e.g. the BigQuery Data Viewer role) on every dataset and table you're syncing, then reconnect the source.",
+            # Forbidden 403 with `reason: billingNotEnabled` — the customer's Google Cloud project
+            # has billing disabled (BigQuery sandbox mode), so any query job is rejected before it
+            # runs. There's nothing we can do but stop retrying until they enable billing.
+            "Billing has not been enabled for this project": "BigQuery billing is not enabled for your Google Cloud project. Enable billing in the Google Cloud console (https://console.cloud.google.com/billing), then resume this source.",
             # Raised from the shared `evolve_pyarrow_schema` in `pipelines/pipeline/utils.py`
             # when an integer column's source type was widened (e.g. `INT64` widened from a
             # narrower numeric type) after the destination table was created with the narrower
